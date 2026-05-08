@@ -24,12 +24,12 @@ RSS news sources, and open-source tooling over paid API usage.
 ---
 
 ## 🚀 MVP Features
-| Feature                    | Description                                              |
-| -------------------------- | -------------------------------------------------------- |
+| Feature                    | Description                                                |
+| -------------------------- | ---------------------------------------------------------- |
 | Task Scheduling            | Accepts natural language tasks and creates calendar events |
-| Smart Time Slot Allocation | Finds available time and avoids conflicts                |
-| Morning Brief              | Sends sports and finance summaries                       |
-| Natural Language Input     | Understands commands like "study for 2 hours tonight"   |
+| Smart Time Slot Allocation | Finds available time and avoids conflicts                  |
+| Morning Brief              | Sends sports and finance summaries                         |
+| Natural Language Input     | Understands commands like "study for 2 hours tonight"      |
 
 ---
 
