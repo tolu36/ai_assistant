@@ -212,7 +212,7 @@ def test_morning_brief_route_returns_sections(monkeypatch):
     monkeypatch.setattr(
         brief_generator,
         "fetch_rss_items",
-        lambda feed_urls: [
+        lambda feed_urls, per_feed_limit=8, limit=None: [
             {
                 "source": "ESPN NBA",
                 "title": "Mock sports headline",
@@ -222,7 +222,7 @@ def test_morning_brief_route_returns_sections(monkeypatch):
         ],
     )
 
-    response = client.get("/brief/morning")
+    response = client.get("/brief/morning?save=false")
 
     assert response.status_code == 200
     data = response.json()
@@ -232,6 +232,37 @@ def test_morning_brief_route_returns_sections(monkeypatch):
     assert data["sports"][0]["title"] == "Mock sports headline"
     assert data["sports"][0]["summary"] == "Sports sentence one. Sports sentence two."
     assert len(data["finance"]) >= 2
+
+
+def test_morning_brief_route_can_save_history(monkeypatch, tmp_path):
+    from app.routes import brief
+
+    monkeypatch.setenv("BRIEF_HISTORY_DB_PATH", str(tmp_path / "brief_history.db"))
+    monkeypatch.setenv("NEWS_SUMMARY_PROVIDER", "off")
+    monkeypatch.setattr(
+        brief,
+        "generate_morning_brief",
+        lambda: {
+            "date": "2026-05-07",
+            "news": [],
+            "sports": [],
+            "finance": [],
+        },
+    )
+
+    response = client.get("/brief/morning")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["history_id"] == 1
+
+    history_response = client.get("/brief/history")
+    assert history_response.status_code == 200
+    assert history_response.json()[0]["id"] == 1
+
+    item_response = client.get("/brief/history/1")
+    assert item_response.status_code == 200
+    assert item_response.json()["brief"]["date"] == "2026-05-07"
 
 
 def test_preferences_route_updates_preferences(monkeypatch, tmp_path):

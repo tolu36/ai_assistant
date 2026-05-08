@@ -1,6 +1,34 @@
 import os
+from pathlib import Path
 
-TIMEZONE = os.getenv("TIMEZONE", "UTC")
+
+def _load_dotenv(path: str = ".env") -> None:
+    env_path = Path(path)
+    if not env_path.exists():
+        return
+
+    for line in env_path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, value = stripped.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+_load_dotenv()
+
+
+def _env(name: str, default: str = "") -> str:
+    value = os.getenv(name)
+    if value is None or not value.strip():
+        return default
+    return value
+
+
+TIMEZONE = _env("TIMEZONE", "UTC")
 GOOGLE_CREDENTIALS_PATH = os.getenv(
     "GOOGLE_CREDENTIALS_PATH", "credentials/credentials.json"
 )
@@ -17,17 +45,20 @@ DEFAULT_NEWS_RSS_FEEDS = ",".join(
         "https://www.theguardian.com/world/rss",
         "https://nationalpost.com/feed/",
         "https://globalnews.ca/feed/",
-        "https://www.cbc.ca/webfeed/rss/rss-canada",
-        "https://www.cbc.ca/webfeed/rss/rss-world",
+        "https://globalnews.ca/canada/feed/",
+        "https://globalnews.ca/world/feed/",
     ]
 )
 DEFAULT_FINANCE_RSS_FEEDS = ",".join(
     [
         "https://finance.yahoo.com/news/rss",
-        "https://www.reuters.com/markets/us/rss.xml",
         "https://www.cnbc.com/id/10001147/device/rss/rss.html",
         "https://www.marketwatch.com/rss/topstories",
         "https://www.bloomberg.com/feed/podcast/etf-report.xml",
+        "https://www.bankofcanada.ca/content_type/press-releases/feed/",
+        "https://www.federalreserve.gov/feeds/press_monetary.xml",
+        "https://www150.statcan.gc.ca/n1/rss/dai-quo/18-eng.atom",
+        "https://www150.statcan.gc.ca/n1/rss/dai-quo/46-eng.atom",
     ]
 )
 NEWS_RSS_FEEDS = os.getenv("NEWS_RSS_FEEDS", DEFAULT_NEWS_RSS_FEEDS)
@@ -42,10 +73,23 @@ SPORTS_TEAMS = os.getenv("SPORTS_TEAMS", "")
 FINANCE_WATCHLIST = os.getenv("FINANCE_WATCHLIST", "")
 PREFERENCES_DB_PATH = os.getenv("PREFERENCES_DB_PATH", "data/preferences.db")
 SCHEDULER_DB_PATH = os.getenv("SCHEDULER_DB_PATH", "data/scheduler.db")
+BRIEF_HISTORY_DB_PATH = os.getenv("BRIEF_HISTORY_DB_PATH", "data/brief_history.db")
 SCOPES = [
     "https://www.googleapis.com/auth/calendar.events",
     "https://www.googleapis.com/auth/calendar.readonly",
 ]
+
+SMTP_HOST = _env("SMTP_HOST", "")
+SMTP_PORT = int(_env("SMTP_PORT", "587"))
+SMTP_USERNAME = _env("SMTP_USERNAME", "")
+SMTP_PASSWORD = _env("SMTP_PASSWORD", "")
+SMTP_USE_TLS = _env("SMTP_USE_TLS", "true").lower() in ("1", "true", "yes")
+SMTP_USE_SSL = _env("SMTP_USE_SSL", "false").lower() in ("1", "true", "yes")
+MORNING_BRIEF_FROM_EMAIL = _env("MORNING_BRIEF_FROM_EMAIL", SMTP_USERNAME)
+MORNING_BRIEF_TO_EMAIL = _env("MORNING_BRIEF_TO_EMAIL", "")
+MORNING_BRIEF_SUBJECT_PREFIX = _env(
+    "MORNING_BRIEF_SUBJECT_PREFIX", "Personal AI Assistant"
+)
 
 MODEL_PROVIDER = os.getenv("MODEL_PROVIDER", "fallback")
 MODEL_FALLBACK_PROVIDER = os.getenv("MODEL_FALLBACK_PROVIDER", "transformers")

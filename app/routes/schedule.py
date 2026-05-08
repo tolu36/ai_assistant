@@ -1,8 +1,8 @@
-from fastapi import APIRouter, HTTPExceptionfrom pydantic import BaseModel, Field
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, Field
 
 from app.services.calendar import create_event
 from app.services.llm_parser import parse_task
-from app.services.scheduler import find_best_slot, propose_slots
 from app.services.schedule_feedback import remember_feedback_constraint
 from app.services.schedule_store import (
     create_proposal,
@@ -11,6 +11,7 @@ from app.services.schedule_store import (
     proposal_slots_as_datetimes,
     update_proposal_slots,
 )
+from app.services.scheduler import find_best_slot, propose_slots
 
 router = APIRouter()
 
@@ -132,7 +133,4 @@ async def revise_schedule_proposal(proposal_id: str, request: ReviseProposalRequ
         "learned_constraint": learned_constraint,
         "suggested_slots": updated["slots"] if updated else [],
         "next_step": "Review the revised times. Confirm the proposal if these work.",
-y are bad, explain why and ask for a revised proposal.",
-),
-        "event": created_event,
     }

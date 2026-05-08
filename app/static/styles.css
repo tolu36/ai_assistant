@@ -148,6 +148,23 @@ pre {
   text-transform: uppercase;
 }
 
+.news-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.news-tag {
+  padding: 3px 7px;
+  border: 1px solid #cdd6e1;
+  border-radius: 999px;
+  background: #eef3f8;
+  color: #394654;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .news-item p {
   margin: 8px 0;
 }

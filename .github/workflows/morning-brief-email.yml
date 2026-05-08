@@ -1,0 +1,58 @@
+name: Morning Brief Email
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 9 * * *"
+      timezone: "America/Toronto"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: morning-brief-email
+  cancel-in-progress: false
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TIMEZONE: America/Toronto
+      MODEL_PROVIDER: fallback
+      NEWS_SUMMARY_PROVIDER: off
+      RSS_TIMEOUT_SECONDS: "8"
+      ARTICLE_FETCH_TIMEOUT_SECONDS: "8"
+      SMTP_HOST: ${{ secrets.SMTP_HOST }}
+      SMTP_PORT: ${{ secrets.SMTP_PORT }}
+      SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+      SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+      SMTP_USE_TLS: ${{ secrets.SMTP_USE_TLS }}
+      SMTP_USE_SSL: ${{ secrets.SMTP_USE_SSL }}
+      MORNING_BRIEF_FROM_EMAIL: ${{ secrets.MORNING_BRIEF_FROM_EMAIL }}
+      MORNING_BRIEF_TO_EMAIL: ${{ secrets.MORNING_BRIEF_TO_EMAIL }}
+      MORNING_BRIEF_SUBJECT_PREFIX: ${{ secrets.MORNING_BRIEF_SUBJECT_PREFIX }}
+      NEWS_RSS_FEEDS: ${{ vars.NEWS_RSS_FEEDS }}
+      SPORTS_INTERESTS: ${{ vars.SPORTS_INTERESTS }}
+      SPORTS_TEAMS: ${{ vars.SPORTS_TEAMS }}
+      FINANCE_WATCHLIST: ${{ vars.FINANCE_WATCHLIST }}
+      FINANCE_RSS_FEEDS: ${{ vars.FINANCE_RSS_FEEDS }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: requirements-brief.txt
+
+      - name: Install brief dependencies
+        run: python -m pip install -r requirements-brief.txt
+
+      - name: Validate email settings
+        run: python scripts/send_morning_brief.py --check-email-config
+
+      - name: Send morning brief
+        run: python scripts/send_morning_brief.py

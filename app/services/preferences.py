@@ -9,6 +9,13 @@ def _split_csv(value: str) -> List[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
+def _env_csv(name: str, default: str) -> List[str]:
+    value = os.getenv(name)
+    if value is None or not value.strip():
+        value = default
+    return _split_csv(value)
+
+
 def _clean_values(values: Any) -> List[str]:
     cleaned = []
     seen = set()
@@ -23,9 +30,9 @@ def _clean_values(values: Any) -> List[str]:
 
 def default_preferences() -> Dict[str, List[str]]:
     return {
-        "sports_interests": _split_csv(os.getenv("SPORTS_INTERESTS", SPORTS_INTERESTS)),
-        "sports_teams": _split_csv(os.getenv("SPORTS_TEAMS", SPORTS_TEAMS)),
-        "finance_watchlist": _split_csv(os.getenv("FINANCE_WATCHLIST", FINANCE_WATCHLIST)),
+        "sports_interests": _env_csv("SPORTS_INTERESTS", SPORTS_INTERESTS),
+        "sports_teams": _env_csv("SPORTS_TEAMS", SPORTS_TEAMS),
+        "finance_watchlist": _env_csv("FINANCE_WATCHLIST", FINANCE_WATCHLIST),
     }
 
 

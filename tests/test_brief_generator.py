@@ -18,6 +18,11 @@ def test_generate_morning_brief_has_required_sections(monkeypatch):
             }
         ],
     )
+    monkeypatch.setattr(
+        brief_generator,
+        "fetch_rss_items",
+        lambda feed_urls, per_feed_limit=8, limit=None: [],
+    )
 
     result = generate_morning_brief(today=date(2026, 5, 7))
 
@@ -65,6 +70,30 @@ def test_parse_rss_items_extracts_titles_and_links():
     ]
 
 
+def test_parse_atom_items_extracts_titles_links_and_summaries():
+    xml_text = """
+    <feed xmlns="http://www.w3.org/2005/Atom">
+      <title>Statistics Canada</title>
+      <entry>
+        <title>Consumer prices rise</title>
+        <summary>Inflation rose in the latest monthly release. Food prices were a contributor. Extra sentence.</summary>
+        <link href="https://example.com/cpi" />
+      </entry>
+    </feed>
+    """
+
+    items = parse_rss_items(xml_text)
+
+    assert items == [
+        {
+            "source": "Statistics Canada",
+            "title": "Consumer prices rise",
+            "summary": "Inflation rose in the latest monthly release. Food prices were a contributor. Extra sentence.",
+            "link": "https://example.com/cpi",
+        }
+    ]
+
+
 def test_generate_morning_brief_uses_configured_rss(monkeypatch):
     monkeypatch.setenv("NEWS_SUMMARY_PROVIDER", "off")
     monkeypatch.setenv("NEWS_RSS_FEEDS", "https://example.com/rss")
@@ -79,6 +108,11 @@ def test_generate_morning_brief_uses_configured_rss(monkeypatch):
                 "link": "https://example.com/configured",
             }
         ],
+    )
+    monkeypatch.setattr(
+        brief_generator,
+        "fetch_rss_items",
+        lambda feed_urls, per_feed_limit=8, limit=None: [],
     )
 
     result = generate_morning_brief(today=date(2026, 5, 7))
@@ -95,13 +129,28 @@ def test_default_news_feeds_include_domestic_and_global_sources(monkeypatch):
         brief_generator.NEWS_RSS_FEEDS,
     )
 
-    assert "https://www.cbc.ca/webfeed/rss/rss-canada" in feeds
-    assert "https://www.cbc.ca/webfeed/rss/rss-world" in feeds
+    assert "https://www.cbc.ca/webfeed/rss/rss-canada" not in feeds
+    assert "https://www.cbc.ca/webfeed/rss/rss-world" not in feeds
     assert "https://feeds.bbci.co.uk/news/world/rss.xml" in feeds
     assert "https://www.cbsnews.com/latest/rss/world" in feeds
     assert "https://www.theguardian.com/world/rss" in feeds
     assert "https://nationalpost.com/feed/" in feeds
     assert "https://globalnews.ca/feed/" in feeds
+    assert "https://globalnews.ca/canada/feed/" in feeds
+    assert "https://globalnews.ca/world/feed/" in feeds
+
+
+def test_default_feeds_exclude_known_failing_sources(monkeypatch):
+    monkeypatch.delenv("FINANCE_RSS_FEEDS", raising=False)
+
+    finance_feeds = brief_generator._get_env_csv(
+        "FINANCE_RSS_FEEDS",
+        brief_generator.FINANCE_RSS_FEEDS,
+    )
+    sports_feeds = brief_generator._sports_feed_urls(["NBA", "NFL"])
+
+    assert "https://www.reuters.com/markets/us/rss.xml" not in finance_feeds
+    assert all("cbc.ca" not in feed for feed in sports_feeds)
 
 
 def test_fetch_rss_headlines_limits_each_feed(monkeypatch):
@@ -197,15 +246,15 @@ def test_generate_morning_brief_uses_sports_interests_and_teams(monkeypatch):
     monkeypatch.setattr(
         brief_generator,
         "fetch_rss_items",
-        lambda feed_urls: [
+        lambda feed_urls, per_feed_limit=8, limit=None: [
             {
-                "source": "CBC Sports NBA",
+                "source": "ESPN NBA",
                 "title": "Toronto Raptors win late",
                 "summary": "The Raptors rallied late. The bench scored 30 points. Extra sentence.",
                 "link": "https://example.com/raptors",
             },
             {
-                "source": "CBC Sports Tennis",
+                "source": "ESPN Tennis",
                 "title": "Serena Williams announces exhibition match",
                 "summary": "Williams announced a new exhibition match.",
                 "link": "https://example.com/serena",
@@ -238,7 +287,7 @@ def test_sports_section_shows_league_headlines_when_teams_do_not_match(monkeypat
     monkeypatch.setattr(
         brief_generator,
         "fetch_rss_items",
-        lambda feed_urls: [
+        lambda feed_urls, per_feed_limit=8, limit=None: [
             {
                 "source": "ESPN NBA",
                 "title": "Knicks injury update",
@@ -257,6 +306,36 @@ def test_sports_section_shows_league_headlines_when_teams_do_not_match(monkeypat
     assert result[1]["title"] == "Knicks injury update"
     assert result[1]["summary"] == "League news."
     assert result[1]["link"] == "https://example.com/knicks"
+
+
+def test_sports_section_matches_team_alias_tokens(monkeypatch):
+    monkeypatch.setattr(
+        brief_generator,
+        "load_preferences",
+        lambda: {
+            "sports_interests": ["NBA"],
+            "sports_teams": ["OKC Thunder"],
+            "finance_watchlist": [],
+        },
+    )
+    monkeypatch.setattr(
+        brief_generator,
+        "fetch_rss_items",
+        lambda feed_urls, per_feed_limit=8, limit=None: [
+            {
+                "source": "ESPN NBA",
+                "title": "OKC up 2-0 on Lakers as Holmgren, SGA score 22",
+                "summary": "The Thunder took command of Game 2.",
+                "link": "https://example.com/okc",
+            }
+        ],
+    )
+
+    result = brief_generator.build_sports_section()
+
+    assert len(result) == 1
+    assert result[0]["matched_interest"] == "OKC Thunder"
+    assert result[0]["title"] == "OKC up 2-0 on Lakers as Holmgren, SGA score 22"
 
 
 def test_sports_summary_falls_back_to_title_for_empty_summary():
@@ -282,10 +361,27 @@ def test_generate_morning_brief_uses_finance_watchlist(monkeypatch):
             "finance_watchlist": ["AAPL", "NVDA", "SPY"],
         },
     )
+    monkeypatch.setattr(
+        brief_generator,
+        "fetch_rss_items",
+        lambda feed_urls, per_feed_limit=8, limit=None: [],
+    )
 
     result = generate_morning_brief(today=date(2026, 5, 7))
 
     assert result["finance"][0] == "Finance watchlist: AAPL, NVDA, SPY"
+
+
+def test_finance_feed_urls_include_watchlist_feeds(monkeypatch):
+    monkeypatch.setenv("FINANCE_RSS_FEEDS", "https://example.com/base")
+
+    feeds = brief_generator._finance_feed_urls(["AAPL", "RY.TO"])
+
+    assert feeds == [
+        "https://finance.yahoo.com/rss/headline?s=AAPL",
+        "https://finance.yahoo.com/rss/headline?s=RY.TO",
+        "https://example.com/base",
+    ]
 
 
 def test_build_finance_section_returns_watchlist_and_headlines(monkeypatch):
@@ -301,7 +397,7 @@ def test_build_finance_section_returns_watchlist_and_headlines(monkeypatch):
     monkeypatch.setattr(
         brief_generator,
         "fetch_rss_items",
-        lambda feed_urls, per_feed_limit=2: [
+        lambda feed_urls, per_feed_limit=8, limit=None: [
             {
                 "source": "Mock Finance",
                 "title": "AAPL earnings beat expectations",
@@ -321,7 +417,41 @@ def test_build_finance_section_returns_watchlist_and_headlines(monkeypatch):
 
     assert result["finance"][0] == "Finance watchlist: AAPL, NVDA"
     assert "Macro watch" in result["finance"][1]
-    assert any("Watchlist AAPL" in line for line in result["finance"]) or any(
-        "Watchlist NVDA" in line for line in result["finance"]
+    assert any(
+        isinstance(item, dict) and item.get("matched_ticker") == "AAPL"
+        for item in result["finance"]
     )
-    assert any("Mock Finance" in line for line in result["finance"])
+    assert any(
+        isinstance(item, dict) and item.get("impact_area") == "inflation"
+        for item in result["finance"]
+    )
+    assert any(
+        isinstance(item, dict) and item.get("source") == "Mock Finance"
+        for item in result["finance"]
+    )
+
+
+def test_build_finance_section_without_watchlist_returns_monitor_ideas(monkeypatch):
+    monkeypatch.setattr(
+        brief_generator,
+        "load_preferences",
+        lambda: {
+            "sports_interests": [],
+            "sports_teams": [],
+            "finance_watchlist": [],
+        },
+    )
+    monkeypatch.setattr(
+        brief_generator,
+        "fetch_rss_items",
+        lambda feed_urls, per_feed_limit=8, limit=None: [],
+    )
+
+    result = brief_generator.build_finance_section()
+
+    assert result[0] == "Finance starter monitor list (not investment advice):"
+    assert any(
+        isinstance(item, dict) and item.get("category") == "Canadian equities"
+        for item in result
+    )
+    assert any(isinstance(item, str) and "Macro watch" in item for item in result)

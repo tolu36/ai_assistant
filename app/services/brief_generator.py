@@ -4,6 +4,7 @@ import logging
 import os
 import re
 from typing import Any, Dict, List
+from urllib.parse import quote
 from urllib.request import Request, urlopen
 import xml.etree.ElementTree as ET
 
@@ -39,9 +40,90 @@ DEFAULT_SPORTS_HEADLINES = [
 ]
 
 DEFAULT_FINANCE_HEADLINES = [
-    "Finance: Configure FINANCE_WATCHLIST to track tickers",
-    "Markets: Review major index movement before the open",
+    "Finance starter monitor list (not investment advice):",
+    "Macro watch: interest rates, inflation, housing, ETF/index flows, and major earnings can affect stocks, ETFs, and housing.",
 ]
+
+DEFAULT_FINANCE_MONITOR_IDEAS = [
+    {
+        "source": "Finance Monitor",
+        "category": "Canadian equities",
+        "title": "Canadian banks and financials",
+        "summary": "Monitor names such as RY, TD, BNS, and other Canadian financials because rates, housing credit, loan losses, and consumer health can affect earnings. Treat this as a watchlist idea, not a buy or sell recommendation.",
+        "link": "",
+    },
+    {
+        "source": "Finance Monitor",
+        "category": "Canadian sectors",
+        "title": "Energy, rail, infrastructure, and Canadian tech",
+        "summary": "Monitor examples such as ENB, CNQ, CNR, CP, BAM, and SHOP to track how commodities, trade, rates, and growth expectations affect domestic markets. This is only a starting point for research.",
+        "link": "",
+    },
+    {
+        "source": "Finance Monitor",
+        "category": "Global equities",
+        "title": "Large global market movers",
+        "summary": "Monitor examples such as AAPL, MSFT, NVDA, AMZN, and GOOGL because they can influence broad equity indexes and technology sentiment. Use this as context rather than investment advice.",
+        "link": "",
+    },
+    {
+        "source": "Finance Monitor",
+        "category": "ETFs and indexes",
+        "title": "Broad market ETFs and benchmarks",
+        "summary": "Monitor broad ETFs or benchmarks such as SPY, VOO, QQQ, XIU, XIC, VFV, and XEQT to understand overall market direction across US, Canadian, and diversified portfolios.",
+        "link": "",
+    },
+]
+
+FINANCE_MACRO_TOPICS = {
+    "interest rates": [
+        "interest rate",
+        "interest rates",
+        "policy rate",
+        "central bank",
+        "bank of canada",
+        "federal reserve",
+        "fed",
+        "fomc",
+        "yield",
+        "bond",
+        "mortgage rate",
+    ],
+    "inflation": [
+        "inflation",
+        "cpi",
+        "consumer price",
+        "prices and price indexes",
+        "cost of living",
+    ],
+    "housing": [
+        "housing",
+        "home sales",
+        "real estate",
+        "mortgage",
+        "rent",
+        "household debt",
+    ],
+    "etfs and markets": [
+        "etf",
+        "index",
+        "s&p",
+        "nasdaq",
+        "tsx",
+        "dow",
+        "markets",
+        "stocks",
+        "equities",
+    ],
+    "earnings": [
+        "earnings",
+        "revenue",
+        "profit",
+        "guidance",
+        "quarterly results",
+        "forecast",
+    ],
+}
 
 SPORTS_RSS_FEEDS = {
     "sports": "https://www.espn.com/espn/rss/news",
@@ -51,20 +133,23 @@ SPORTS_RSS_FEEDS = {
     "mlb": "https://www.espn.com/espn/rss/mlb/news",
     "soccer": "https://www.espn.com/espn/rss/soccer/news",
     "tennis": "https://www.espn.com/espn/rss/tennis/news",
-    "cfl": "https://www.cbc.ca/webfeed/rss/rss-sports-cfl",
-    "curling": "https://www.cbc.ca/webfeed/rss/rss-sports-curling",
     "golf": "https://www.espn.com/espn/rss/golf/news",
     "olympics": "https://www.espn.com/espn/rss/oly/news",
 }
 
-SPORTS_FALLBACK_RSS_FEEDS = {
-    "sports": "https://www.cbc.ca/webfeed/rss/rss-sports",
-    "nba": "https://www.cbc.ca/webfeed/rss/rss-sports-nba",
-    "nhl": "https://www.cbc.ca/webfeed/rss/rss-sports-nhl",
-    "nfl": "https://www.cbc.ca/webfeed/rss/rss-sports-nfl",
-    "mlb": "https://www.cbc.ca/webfeed/rss/rss-sports-mlb",
-    "soccer": "https://www.cbc.ca/webfeed/rss/rss-sports-soccer",
-    "tennis": "https://www.cbc.ca/webfeed/rss/rss-sports-tennis",
+SPORTS_FALLBACK_RSS_FEEDS: Dict[str, str] = {}
+
+TEAM_TOKEN_STOPWORDS = {
+    "and",
+    "city",
+    "club",
+    "fc",
+    "new",
+    "of",
+    "sc",
+    "the",
+    "team",
+    "united",
 }
 
 
@@ -73,7 +158,10 @@ def _split_csv(value: str) -> List[str]:
 
 
 def _get_env_csv(name: str, default: str) -> List[str]:
-    return _split_csv(os.getenv(name, default))
+    value = os.getenv(name)
+    if value is None or not value.strip():
+        value = default
+    return _split_csv(value)
 
 
 def _first_text(element: ET.Element, tag: str) -> str:
@@ -88,6 +176,22 @@ def _first_text_by_local_name(element: ET.Element, local_name: str) -> str:
         tag = child.tag.rsplit("}", 1)[-1]
         if tag == local_name and child.text:
             return child.text.strip()
+    return ""
+
+
+def _elements_by_local_name(element: ET.Element, local_name: str) -> List[ET.Element]:
+    return [
+        child
+        for child in element.iter()
+        if child.tag.rsplit("}", 1)[-1] == local_name
+    ]
+
+
+def _atom_link(element: ET.Element) -> str:
+    for child in element:
+        tag = child.tag.rsplit("}", 1)[-1]
+        if tag == "link":
+            return child.attrib.get("href", "") or (child.text or "").strip()
     return ""
 
 
@@ -122,9 +226,9 @@ def _sentence_summary(text: str, max_sentences: int = 5) -> str:
 
 def _feed_title(root: ET.Element) -> str:
     channel = root.find("channel")
-    if channel is None:
-        return ""
-    return _first_text(channel, "title")
+    if channel is not None:
+        return _first_text(channel, "title")
+    return _first_text_by_local_name(root, "title")
 
 
 def parse_rss_items(xml_text: str, limit: int = 5) -> List[Dict[str, str]]:
@@ -138,6 +242,27 @@ def parse_rss_items(xml_text: str, limit: int = 5) -> List[Dict[str, str]]:
         description = _first_text(item, "description")
         if not description:
             description = _first_text_by_local_name(item, "encoded")
+        if title:
+            items.append(
+                {
+                    "source": _clean_text(source),
+                    "title": _clean_text(title),
+                    "summary": _sentence_summary(description or title),
+                    "link": _clean_text(link),
+                }
+            )
+        if len(items) >= limit:
+            break
+
+    if items:
+        return items
+
+    for entry in _elements_by_local_name(root, "entry"):
+        title = _first_text_by_local_name(entry, "title")
+        link = _atom_link(entry)
+        description = _first_text_by_local_name(entry, "summary")
+        if not description:
+            description = _first_text_by_local_name(entry, "content")
         if title:
             items.append(
                 {
@@ -176,7 +301,9 @@ def fetch_rss_headlines(
 
 
 def fetch_rss_items(
-    feed_urls: List[str], per_feed_limit: int = 8
+    feed_urls: List[str],
+    per_feed_limit: int = 8,
+    limit: int | None = None,
 ) -> List[Dict[str, str]]:
     items = []
 
@@ -186,6 +313,8 @@ def fetch_rss_items(
             with urlopen(request, timeout=RSS_TIMEOUT_SECONDS) as response:
                 xml_text = response.read().decode("utf-8", errors="replace")
             items.extend(parse_rss_items(xml_text, limit=per_feed_limit))
+            if limit is not None and len(items) >= limit:
+                return items[:limit]
         except Exception as exc:
             LOGGER.warning("Could not fetch RSS feed %s: %s", feed_url, exc)
 
@@ -251,16 +380,56 @@ def _normalize(value: str) -> str:
     return value.lower().strip()
 
 
-def _finance_feed_urls() -> List[str]:
-    return _get_env_csv("FINANCE_RSS_FEEDS", FINANCE_RSS_FEEDS) or []
+def _dedupe(values: List[str]) -> List[str]:
+    seen = set()
+    unique = []
+    for value in values:
+        if value and value not in seen:
+            unique.append(value)
+            seen.add(value)
+    return unique
+
+
+def _normalize_ticker(value: str) -> str:
+    return re.sub(r"[^A-Za-z0-9.\-]", "", value.strip().upper())
+
+
+def _finance_feed_urls(watchlist: List[str] | None = None) -> List[str]:
+    feeds = []
+    for ticker in watchlist or []:
+        normalized = _normalize_ticker(ticker)
+        if normalized:
+            feeds.append(
+                f"https://finance.yahoo.com/rss/headline?s={quote(normalized)}"
+            )
+    feeds.extend(_get_env_csv("FINANCE_RSS_FEEDS", FINANCE_RSS_FEEDS) or [])
+    return _dedupe(feeds)
+
+
+def _finance_search_text(item: Dict[str, str]) -> str:
+    return (
+        f"{item.get('source', '')} {item.get('title', '')} "
+        f"{item.get('summary', '')}"
+    ).lower()
 
 
 def _match_watchlist(item: Dict[str, str], watchlist: List[str]) -> str:
-    text = f"{item.get('source', '')} {item.get('title', '')} {item.get('summary', '')}".lower()
+    text = _finance_search_text(item)
     for ticker in watchlist:
         normalized = ticker.lower().strip()
-        if normalized and normalized in text:
+        if not normalized:
+            continue
+        pattern = rf"(?<![a-z0-9]){re.escape(normalized)}(?![a-z0-9])"
+        if re.search(pattern, text) or (len(normalized) >= 4 and normalized in text):
             return ticker
+    return ""
+
+
+def _match_macro_topic(item: Dict[str, str]) -> str:
+    text = _finance_search_text(item)
+    for topic, keywords in FINANCE_MACRO_TOPICS.items():
+        if any(keyword in text for keyword in keywords):
+            return topic
     return ""
 
 
@@ -287,10 +456,10 @@ def _sports_feed_urls(interests: List[str]) -> List[str]:
 def _match_sports_item(
     item: Dict[str, str], interests: List[str], teams: List[str]
 ) -> str:
-    text = f"{item.get('source', '')} {item.get('title', '')}".lower()
+    text = _sports_search_text(item)
 
     for team in teams:
-        if team.lower() in text:
+        if _matches_team_text(text, team):
             return team
     for interest in interests:
         if interest.lower() in text:
@@ -299,10 +468,38 @@ def _match_sports_item(
     return ""
 
 
+def _sports_search_text(item: Dict[str, str]) -> str:
+    return (
+        f"{item.get('source', '')} {item.get('title', '')} "
+        f"{item.get('summary', '')}"
+    ).lower()
+
+
+def _team_match_tokens(team: str) -> List[str]:
+    tokens = re.findall(r"[a-z0-9]+", team.lower())
+    return [
+        token
+        for token in tokens
+        if len(token) >= 3 and token not in TEAM_TOKEN_STOPWORDS
+    ]
+
+
+def _matches_team_text(text: str, team: str) -> bool:
+    normalized_team = team.lower().strip()
+    if not normalized_team:
+        return False
+    if normalized_team in text:
+        return True
+    return any(
+        re.search(rf"\b{re.escape(token)}\b", text)
+        for token in _team_match_tokens(team)
+    )
+
+
 def _match_team(item: Dict[str, str], teams: List[str]) -> str:
-    text = f"{item.get('source', '')} {item.get('title', '')}".lower()
+    text = _sports_search_text(item)
     for team in teams:
-        if team.lower() in text:
+        if _matches_team_text(text, team):
             return team
     return ""
 
@@ -346,7 +543,7 @@ def build_sports_section() -> List[Any]:
         return DEFAULT_SPORTS_HEADLINES
 
     feed_urls = _sports_feed_urls(interests)
-    items = fetch_rss_items(feed_urls)
+    items = fetch_rss_items(feed_urls, per_feed_limit=3, limit=10)
     lines = []
     league_lines = []
 
@@ -377,54 +574,89 @@ def build_sports_section() -> List[Any]:
     ]
 
 
-def _finance_card(item: Dict[str, str], matched_ticker: str = "") -> str:
+def _finance_card(
+    item: Dict[str, str],
+    matched_ticker: str = "",
+    impact_area: str = "",
+) -> Dict[str, str]:
     summary = item.get("summary", "") or item.get("title", "")
-    headline = _sentence_summary(summary, max_sentences=2)
-    card = f"{item.get('source', 'Finance')}: {item.get('title', '')} — {headline}"
+    card = {
+        "source": item.get("source", "Finance"),
+        "category": "Finance",
+        "title": item.get("title", ""),
+        "summary": _sentence_summary(summary, max_sentences=2),
+        "link": item.get("link", ""),
+    }
     if matched_ticker:
-        card = f"Watchlist {matched_ticker}: {card}"
+        card["matched_ticker"] = matched_ticker
+    if impact_area:
+        card["impact_area"] = impact_area
     return card
 
 
-def build_finance_section() -> List[str]:
-    preferences = load_preferences()
-    watchlist = preferences["finance_watchlist"] or _get_env_csv(
-        "FINANCE_WATCHLIST", FINANCE_WATCHLIST
-    )
-    if not watchlist:
-        return DEFAULT_FINANCE_HEADLINES
+def _dedupe_finance_items(items: List[Dict[str, str]]) -> List[Dict[str, str]]:
+    seen = set()
+    unique = []
+    for item in items:
+        key = item.get("link") or item.get("title")
+        if not key or key in seen:
+            continue
+        unique.append(item)
+        seen.add(key)
+    return unique
 
-    headlines = fetch_rss_items(_finance_feed_urls(), per_feed_limit=2)
-    watchlist_lines = []
-    general_lines = []
+
+def build_finance_section() -> List[Any]:
+    preferences = load_preferences()
+    watchlist = _dedupe(
+        preferences["finance_watchlist"]
+        or _get_env_csv("FINANCE_WATCHLIST", FINANCE_WATCHLIST)
+    )
+    headlines = _dedupe_finance_items(
+        fetch_rss_items(_finance_feed_urls(watchlist), per_feed_limit=2, limit=10)
+    )
+    watchlist_cards = []
+    macro_cards = []
+    market_cards = []
 
     for item in headlines:
         matched = _match_watchlist(item, watchlist)
-        card = _finance_card(item, matched)
+        impact_area = _match_macro_topic(item)
+        card = _finance_card(item, matched, impact_area)
         if matched:
-            watchlist_lines.append(card)
+            watchlist_cards.append(card)
+        elif impact_area:
+            macro_cards.append(card)
         else:
-            general_lines.append(card)
-        if len(watchlist_lines) >= 2 and len(general_lines) >= 2:
+            market_cards.append(card)
+        if len(watchlist_cards) >= 3 and len(macro_cards) >= 3:
             break
 
-    lines = [f"Finance watchlist: {', '.join(watchlist)}"]
-    lines.append(
-        "Macro watch: interest rates, inflation, housing market, and ETF flows remain important for your portfolio."
-    )
-    if watchlist_lines:
-        lines.extend(watchlist_lines[:2])
-    if general_lines:
-        lines.extend(general_lines[:2])
+    lines: List[Any] = []
+    if watchlist:
+        lines.append(f"Finance watchlist: {', '.join(watchlist)}")
+    else:
+        lines.extend(DEFAULT_FINANCE_HEADLINES[:1])
+        lines.extend(DEFAULT_FINANCE_MONITOR_IDEAS)
 
-    if len(lines) <= 2:
-        broader = fetch_rss_headlines(_finance_feed_urls(), limit=3, per_feed_limit=1)
-        if broader:
-            lines.extend(_finance_card(item) for item in broader[:2])
-        else:
-            lines.append(
-                "Finance: No finance headlines were available; check your FINANCE_RSS_FEEDS or network connectivity."
-            )
+    lines.append(DEFAULT_FINANCE_HEADLINES[1])
+    lines.extend(watchlist_cards[:3])
+    lines.extend(macro_cards[:3])
+    lines.extend(market_cards[:2])
+
+    has_live_headline = any(
+        isinstance(item, dict) and item.get("link") for item in lines
+    )
+    if not has_live_headline:
+        lines.append(
+            {
+                "source": "Finance",
+                "category": "Finance",
+                "title": "No finance headlines were available",
+                "summary": "Check FINANCE_RSS_FEEDS or network connectivity if this persists. The starter monitor list is still shown so you can decide which companies, ETFs, and macro topics to follow.",
+                "link": "",
+            }
+        )
 
     return lines
 

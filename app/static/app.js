@@ -60,11 +60,29 @@ function renderSection(title, items) {
       const titleText = document.createElement("strong");
       titleText.textContent = item.title || "";
 
+      const tags = [
+        item.category,
+        item.matched_ticker ? `Watchlist: ${item.matched_ticker}` : "",
+        item.impact_area ? `Impact: ${item.impact_area}` : "",
+        item.matched_interest ? `Matched: ${item.matched_interest}` : "",
+      ].filter(Boolean);
+
       const summary = document.createElement("p");
       summary.textContent = item.summary || "";
 
       li.appendChild(source);
       li.appendChild(titleText);
+      if (tags.length) {
+        const tagRow = document.createElement("div");
+        tagRow.className = "news-tags";
+        tags.forEach((tag) => {
+          const tagNode = document.createElement("span");
+          tagNode.className = "news-tag";
+          tagNode.textContent = tag;
+          tagRow.appendChild(tagNode);
+        });
+        li.appendChild(tagRow);
+      }
       li.appendChild(summary);
 
       if (item.link) {
