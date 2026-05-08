@@ -1,0 +1,164 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #f7f8fa;
+  color: #18202a;
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+.shell {
+  width: min(1120px, calc(100% - 32px));
+  margin: 32px auto;
+}
+
+.panel {
+  margin-bottom: 24px;
+}
+
+.status-bar {
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  border: 1px solid #d7dde5;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #394654;
+  font-size: 14px;
+}
+
+h1,
+h2,
+h3 {
+  margin: 0 0 16px;
+  font-weight: 700;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.card,
+.brief-section {
+  background: #ffffff;
+  border: 1px solid #d7dde5;
+  border-radius: 8px;
+  padding: 18px;
+}
+
+label {
+  display: block;
+  margin-bottom: 14px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+input {
+  width: 100%;
+  margin-top: 6px;
+  padding: 10px 12px;
+  border: 1px solid #b7c0cc;
+  border-radius: 6px;
+  font-size: 15px;
+}
+
+button {
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid #174a7c;
+  border-radius: 6px;
+  background: #174a7c;
+  color: #ffffff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #123b63;
+}
+
+.button-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.proposal-actions {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #e4e8ef;
+}
+
+.hidden {
+  display: none;
+}
+
+pre {
+  min-height: 90px;
+  margin: 16px 0 0;
+  padding: 12px;
+  overflow: auto;
+  background: #f1f4f8;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.brief {
+  display: grid;
+  gap: 16px;
+}
+
+.brief-section ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.brief-section li {
+  margin-bottom: 10px;
+  line-height: 1.45;
+}
+
+.news-item {
+  list-style: none;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #e4e8ef;
+}
+
+.news-item:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.news-source {
+  margin-bottom: 4px;
+  color: #586574;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.news-item p {
+  margin: 8px 0;
+}
+
+.news-item a {
+  color: #174a7c;
+  font-weight: 700;
+}
+
+@media (max-width: 760px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}

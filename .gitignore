@@ -1,0 +1,12 @@
+credentials/
+token.json
+.env
+data/
+logs/
+*.md
+pycache/
+*.log
+__pycache__/
+pytest_cache-files*/
+*.ini
+pytest-cache-files*/
