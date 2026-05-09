@@ -278,12 +278,9 @@ are in `docs/oracle-vps-setup.md`.
 Use GitHub Actions only for a simpler scheduled email where preferences are
 edited as GitHub variables. Details are in `docs/free-hosting.md`.
 
-## Next Steps and Future Releases
+## Roadmap
 
-- Add follow-up Q&A for brief items: `POST /brief/story/{story_id}/ask`
-- Improve sports source reliability beyond RSS where free APIs are available
-- Add multi-calendar support and combined availability checks
-- Add user profiles if this moves beyond a single-user app
+Future improvements and wishlist items are tracked in `docs/roadmap.md`.
 
 ## Project Structure
 
