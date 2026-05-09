@@ -1,8 +1,23 @@
 # Personal AI Assistant MVP
 
 A free/open-source personal AI assistant for task scheduling and daily briefing.
-The project is designed to minimize cost by favoring RSS sources, SQLite, local
-fallback logic, and optional open/free LLM providers.
+The project is designed to minimize cost by favoring RSS sources, local fallback
+logic, optional free/low-cost LLM providers, and AWS serverless services that
+fit a small single-user app.
+
+## Current Deployment Status
+
+The current hosted MVP runs on AWS:
+
+- **Lambda Function URL** hosts the FastAPI API and browser UI.
+- **DynamoDB** stores preferences, brief history, scheduler proposals, and feedback constraints.
+- **EventBridge Scheduler** invokes the morning email job at 9 AM America/Toronto.
+- **SSM Parameter Store SecureString** stores hosted secrets such as the app token, SMTP password, and Mistral key.
+- **Gmail SMTP** sends the morning brief email.
+- **Mistral** is enabled for hosted LLM-backed behavior.
+- **Google Calendar is mocked in hosted mode** for now; local Google Calendar support still exists.
+
+Local development still uses SQLite by default, so the app can run without AWS.
 
 ## What This Project Solves
 
@@ -10,13 +25,14 @@ fallback logic, and optional open/free LLM providers.
 - Finds available calendar time and avoids conflicts
 - Creates calendar events after a task is scheduled or a proposal is confirmed
 - Generates a morning brief with news, sports, and finance sections
-- Stores single-user preferences in SQLite
+- Stores single-user preferences locally in SQLite or hosted in DynamoDB
+- Sends the morning brief by email from the hosted scheduler
 
 ## Key Principles
 
-- No ongoing cost by default
+- Low/no ongoing cost for single-user MVP usage
 - Open-source and free services first
-- Google Calendar only for calendar reads/writes
+- Google Calendar only for calendar reads/writes; hosted mode currently uses mock calendar
 - RSS-based briefing content
 - Optional LLM support with deterministic fallback behavior
 
@@ -28,8 +44,10 @@ fallback logic, and optional open/free LLM providers.
 | Schedule proposals | Suggests time slots before booking and accepts feedback |
 | Calendar conflict checks | Reads busy calendar slots before selecting a time |
 | Morning brief | Shows news, sports, and finance updates |
-| Preferences | Stores sports interests, teams, and finance watchlists in SQLite |
-| Local UI | Provides a simple browser UI for trying the app |
+| Preferences | Stores sports interests, teams, and finance watchlists in SQLite locally or DynamoDB on AWS |
+| Hosted UI | Provides a browser UI through AWS Lambda Function URL |
+| Morning email | Sends the daily brief from EventBridge Scheduler through Gmail SMTP |
+| Status endpoint | Reports non-secret runtime configuration and provider health |
 
 ## Out of Scope for the MVP
 
@@ -47,15 +65,19 @@ fallback logic, and optional open/free LLM providers.
 - `app/routes/brief.py` - morning brief API
 - `app/routes/preferences.py` - preference APIs
 - `app/routes/llm.py` - LLM status API
+- `app/routes/status.py` - non-secret operational status API
+- `app/aws_lambda.py` - Lambda handler for HTTP requests and scheduled events
 - `app/services/llm_parser.py` - task parsing and fallback logic
 - `app/services/scheduler.py` - time slot selection
 - `app/services/calendar.py` - Google Calendar integration
 - `app/services/brief_generator.py` - RSS news, sports, and finance briefing
-- `app/services/brief_history.py` - SQLite morning brief history
+- `app/services/brief_history.py` - local/AWS morning brief history
 - `app/services/email_delivery.py` - SMTP email rendering and delivery
-- `app/services/preferences.py` - SQLite preference storage
+- `app/services/preferences.py` - local/AWS preference storage
+- `app/services/dynamodb_store.py` - hosted DynamoDB persistence
 - `app/services/schedule_feedback.py` - scheduler feedback constraints
 - `app/services/schedule_store.py` - scheduler proposal persistence
+- `deploy/aws/template.yaml` - AWS SAM deployment template
 
 ## Setup and Run
 
@@ -130,6 +152,12 @@ Check LLM status:
 curl.exe "http://127.0.0.1:8000/llm/status?check=true"
 ```
 
+Check system status:
+
+```powershell
+curl.exe "http://127.0.0.1:8000/status"
+```
+
 ## Configuration
 
 Key environment variables:
@@ -169,9 +197,11 @@ or GitHub Actions environment take precedence over `.env`.
 
 ## Morning Email
 
-The daily email path is implemented in `scripts/send_morning_brief.py`.
+The local email path is implemented in `scripts/send_morning_brief.py`.
 It generates the morning brief, saves it to SQLite history, renders text and
-HTML versions, and sends it through SMTP.
+HTML versions, and sends it through SMTP. In the hosted AWS deployment, the same
+brief generation and email delivery logic is invoked by EventBridge Scheduler
+through `app/aws_lambda.py`, with brief history saved to DynamoDB.
 
 Use `--dry-run` first. That command does not send email:
 
@@ -199,7 +229,9 @@ For local Windows scheduling, run:
 .\scripts\register_windows_morning_brief_task.ps1
 ```
 
-For free hosted scheduling, use the included GitHub Actions workflow:
+The current hosted MVP uses AWS EventBridge Scheduler. GitHub Actions remains
+available only as a simpler alternate path where preferences are edited as
+GitHub variables:
 
 ```text
 .github/workflows/morning-brief-email.yml
@@ -265,11 +297,11 @@ curl.exe http://127.0.0.1:8000/brief/history/1
 Use `GET /brief/morning?save=false` when you want a one-off brief without
 storing it.
 
-## Free Hosting Recommendation
+## Hosting
 
-Use AWS serverless when you want to stay close to always-free AWS services.
-The hosted app uses Lambda Function URLs, DynamoDB, and EventBridge Scheduler.
-Setup details are in `docs/aws-always-free-serverless.md`.
+The active hosted deployment uses AWS serverless. It runs the app with Lambda
+Function URLs, DynamoDB, EventBridge Scheduler, SSM Parameter Store, Gmail SMTP,
+and Mistral. Setup details are in `docs/aws-always-free-serverless.md`.
 
 Use Oracle Cloud Always Free when you want a traditional VPS. The VPS keeps
 SQLite state and runs the 9 AM email job from the same app data. Setup details
