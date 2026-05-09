@@ -4,6 +4,7 @@ import sqlite3
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 
+from app.services import dynamodb_store
 from config import BRIEF_HISTORY_DB_PATH
 
 
@@ -37,6 +38,9 @@ def save_morning_brief(
     brief: Dict[str, Any],
     db_path: str | None = None,
 ) -> Dict[str, Any]:
+    if db_path is None and dynamodb_store.is_dynamodb_enabled():
+        return dynamodb_store.save_morning_brief(brief)
+
     created_at = datetime.now(timezone.utc).isoformat()
     payload_json = json.dumps(brief, sort_keys=True, default=str)
 
@@ -64,6 +68,9 @@ def list_morning_briefs(
     limit: int = 10,
     db_path: str | None = None,
 ) -> List[Dict[str, Any]]:
+    if db_path is None and dynamodb_store.is_dynamodb_enabled():
+        return dynamodb_store.list_morning_briefs(limit=limit)
+
     with _connect(db_path) as connection:
         _ensure_db(connection)
         rows = connection.execute(
@@ -83,9 +90,17 @@ def list_morning_briefs(
 
 
 def get_morning_brief(
-    brief_id: int,
+    brief_id: int | str,
     db_path: str | None = None,
 ) -> Dict[str, Any] | None:
+    if db_path is None and dynamodb_store.is_dynamodb_enabled():
+        return dynamodb_store.get_morning_brief(str(brief_id))
+
+    try:
+        sqlite_brief_id = int(brief_id)
+    except (TypeError, ValueError):
+        return None
+
     with _connect(db_path) as connection:
         _ensure_db(connection)
         row = connection.execute(
@@ -94,7 +109,7 @@ def get_morning_brief(
             FROM morning_briefs
             WHERE id = ?
             """,
-            (brief_id,),
+            (sqlite_brief_id,),
         ).fetchone()
 
     if not row:

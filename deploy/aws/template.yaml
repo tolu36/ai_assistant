@@ -1,0 +1,187 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: Personal AI Assistant always-free-friendly AWS serverless deployment.
+
+Parameters:
+  AppName:
+    Type: String
+    Default: personal-ai-assistant
+  SsmParameterPrefix:
+    Type: String
+    Default: /personal-ai-assistant/prod
+    Description: SSM Parameter Store prefix for SecureString secrets. Do not include a trailing slash.
+  SmtpHost:
+    Type: String
+    Default: smtp.gmail.com
+  SmtpPort:
+    Type: String
+    Default: "587"
+  SmtpUsername:
+    Type: String
+  MorningBriefFromEmail:
+    Type: String
+    Default: ""
+  MorningBriefToEmail:
+    Type: String
+  SportsInterests:
+    Type: String
+    Default: NBA,NFL
+  SportsTeams:
+    Type: String
+    Default: ""
+  FinanceWatchlist:
+    Type: String
+    Default: XEQT.TO,VEQT.TO,VFV.TO,XIC.TO,ZAG.TO,CASH.TO,VTI,VOO,VT
+  NewsSummaryProvider:
+    Type: String
+    Default: "off"
+    AllowedValues:
+      - "off"
+      - "auto"
+      - "llm"
+    Description: Use off for RSS summaries, llm to require LLM summaries, or auto to use LLM when enabled.
+  ModelProvider:
+    Type: String
+    Default: fallback
+    AllowedValues:
+      - fallback
+      - mistral
+  ScheduleExpression:
+    Type: String
+    Default: cron(0 9 * * ? *)
+  ScheduleTimezone:
+    Type: String
+    Default: America/Toronto
+
+Globals:
+  Function:
+    Runtime: python3.11
+    Timeout: 90
+    MemorySize: 512
+    Architectures:
+      - x86_64
+
+Resources:
+  AppTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${AppName}-state"
+      BillingMode: PROVISIONED
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: sk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
+      ProvisionedThroughput:
+        ReadCapacityUnits: 1
+        WriteCapacityUnits: 1
+
+  AssistantFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: makefile
+    Properties:
+      FunctionName: !Ref AppName
+      CodeUri: ../..
+      Handler: app.aws_lambda.handler
+      FunctionUrlConfig:
+        AuthType: NONE
+        Cors:
+          AllowOrigins:
+            - "*"
+          AllowHeaders:
+            - content-type
+            - x-app-token
+          AllowMethods:
+            - GET
+            - POST
+      Environment:
+        Variables:
+          STORAGE_PROVIDER: dynamodb
+          SECRETS_PROVIDER: ssm
+          SSM_PARAMETER_PREFIX: !Ref SsmParameterPrefix
+          DYNAMODB_TABLE_NAME: !Ref AppTable
+          DYNAMODB_USER_ID: default
+          TIMEZONE: !Ref ScheduleTimezone
+          CALENDAR_PROVIDER: mock
+          MODEL_PROVIDER: !Ref ModelProvider
+          MODEL_FALLBACK_PROVIDER: fallback
+          NEWS_SUMMARY_PROVIDER: !Ref NewsSummaryProvider
+          SPORTS_INTERESTS: !Ref SportsInterests
+          SPORTS_TEAMS: !Ref SportsTeams
+          FINANCE_WATCHLIST: !Ref FinanceWatchlist
+          SMTP_HOST: !Ref SmtpHost
+          SMTP_PORT: !Ref SmtpPort
+          SMTP_USERNAME: !Ref SmtpUsername
+          SMTP_USE_TLS: "true"
+          SMTP_USE_SSL: "false"
+          MORNING_BRIEF_FROM_EMAIL: !Ref MorningBriefFromEmail
+          MORNING_BRIEF_TO_EMAIL: !Ref MorningBriefToEmail
+          MORNING_BRIEF_SUBJECT_PREFIX: Personal AI Assistant
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AppTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - ssm:GetParameter
+                - ssm:GetParameters
+              Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SsmParameterPrefix}/*"
+            - Effect: Allow
+              Action:
+                - kms:Decrypt
+              Resource: "*"
+              Condition:
+                StringEquals:
+                  kms:ViaService: !Sub "ssm.${AWS::Region}.amazonaws.com"
+
+  SchedulerInvokeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: scheduler.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: InvokeAssistantFunction
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource: !GetAtt AssistantFunction.Arn
+
+  MorningBriefSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: !Sub "${AppName}-morning-brief"
+      Description: Sends the Personal AI Assistant morning brief.
+      FlexibleTimeWindow:
+        Mode: "OFF"
+      ScheduleExpression: !Ref ScheduleExpression
+      ScheduleExpressionTimezone: !Ref ScheduleTimezone
+      State: ENABLED
+      Target:
+        Arn: !GetAtt AssistantFunction.Arn
+        RoleArn: !GetAtt SchedulerInvokeRole.Arn
+        Input: '{"source":"aws.scheduler","detail-type":"Scheduler Event"}'
+        RetryPolicy:
+          MaximumEventAgeInSeconds: 3600
+          MaximumRetryAttempts: 3
+
+Outputs:
+  AppUrl:
+    Description: Public Lambda Function URL for the app.
+    Value: !GetAtt AssistantFunctionUrl.FunctionUrl
+  DynamoDBTable:
+    Description: DynamoDB table used for app state.
+    Value: !Ref AppTable

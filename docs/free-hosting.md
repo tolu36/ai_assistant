@@ -8,9 +8,14 @@ This MVP has two different hosting needs:
 For a static scheduled email, GitHub Actions is the easiest free default. It
 can run the brief email script once per day without keeping a server online.
 
-For dynamic app preferences, Oracle Cloud Always Free is the better free path.
-It is a real VM option, but it requires an Oracle account and available capacity
-in your home region. The setup guide is in `docs/oracle-vps-setup.md`.
+For dynamic app preferences on AWS, use the serverless path in
+`docs/aws-always-free-serverless.md`. It uses Lambda Function URLs, DynamoDB,
+and EventBridge Scheduler instead of an EC2 VPS.
+
+Oracle Cloud Always Free is still the better free path if you specifically want
+a traditional VPS. It is a real VM option, but it requires an Oracle account
+and available capacity in your home region. The setup guide is in
+`docs/oracle-vps-setup.md`.
 
 ## Recommended MVP Path
 
@@ -23,8 +28,15 @@ variables:
 - It stores SMTP credentials as repository secrets.
 - It does not require a 24/7 server for a once-daily email.
 
+Use AWS serverless when you want dynamic preferences without a server:
+
+- Lambda Function URLs serve the FastAPI app without API Gateway.
+- DynamoDB stores preferences and brief history.
+- EventBridge Scheduler invokes the morning email at 9 AM America/Toronto.
+- Gmail SMTP still sends the email.
+
 Use Oracle Cloud Always Free when you want the FastAPI app running all day and
-want preference changes from the UI to affect the next 9 AM email:
+want a traditional Linux server:
 
 - Oracle documents Always Free compute VM instances.
 - Oracle documents Ampere A1 Arm capacity equivalent to 4 OCPUs and 24 GB memory
@@ -98,5 +110,5 @@ High-level deployment path:
 0 9 * * * cd /path/to/ai_assistant && /path/to/python scripts/send_morning_brief.py
 ```
 
-For this MVP, use Oracle Cloud Always Free if you want dynamic preferences
-without adding a separate hosted database.
+For this MVP, use AWS serverless if the goal is to learn AWS always-free-style
+services. Use Oracle Cloud Always Free if the goal is to learn VPS operations.

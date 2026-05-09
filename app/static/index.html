@@ -9,8 +9,14 @@
 <body>
   <main class="shell">
     <section class="panel">
-      <h1>Personal AI Assistant</h1>
-      <div id="llm-status" class="status-bar">Checking LLM status...</div>
+      <div class="toolbar">
+        <h1>Personal AI Assistant</h1>
+        <button id="refresh-status" type="button">Refresh Status</button>
+      </div>
+      <div id="system-status" class="status-grid"></div>
+    </section>
+
+    <section class="panel">
       <div class="grid">
         <form id="preferences-form" class="card">
           <h2>Preferences</h2>
@@ -24,7 +30,7 @@
           </label>
           <label>
             Finance Watchlist
-            <input id="finance-watchlist" placeholder="AAPL, NVDA, SPY">
+            <input id="finance-watchlist" placeholder="XEQT.TO, VEQT.TO, VFV.TO, XIC.TO, ZAG.TO, CASH.TO">
           </label>
           <button type="submit">Save Preferences</button>
         </form>
@@ -49,7 +55,7 @@
               <button id="confirm-proposal" type="button">Confirm Proposal</button>
             </div>
           </div>
-          <pre id="schedule-output"></pre>
+          <div id="schedule-output" class="schedule-output"></div>
         </form>
       </div>
     </section>

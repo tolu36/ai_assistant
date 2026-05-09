@@ -3,6 +3,8 @@ token.json
 .env
 data/
 logs/
+.aws-sam/
+response.json
 planPersonalAIAssistant.prompt.md
 pycache/
 *.log

@@ -1,8 +1,10 @@
 from fastapi.testclient import TestClient
 
+from app import main
 from app.main import app
 
 
+main.APP_ACCESS_TOKEN = ""
 client = TestClient(app)
 
 
@@ -297,3 +299,39 @@ def test_llm_status_route(monkeypatch):
     data = response.json()
     assert data["provider"] == "fallback"
     assert data["enabled"] is False
+
+
+def test_status_route_returns_non_secret_operational_state(monkeypatch):
+    monkeypatch.setenv("STORAGE_PROVIDER", "sqlite")
+    monkeypatch.setenv("CALENDAR_PROVIDER", "mock")
+    monkeypatch.setenv("MODEL_PROVIDER", "mistral")
+    monkeypatch.setenv("NEWS_SUMMARY_PROVIDER", "auto")
+    monkeypatch.setenv("SMTP_HOST", "smtp.example.com")
+    monkeypatch.setenv("SMTP_USERNAME", "sender@example.com")
+    monkeypatch.setenv("SMTP_PASSWORD", "secret-password")
+    monkeypatch.setenv("MORNING_BRIEF_TO_EMAIL", "reader@example.com")
+
+    response = client.get("/status")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["storage_provider"] == "sqlite"
+    assert data["calendar_provider"] == "mock"
+    assert data["model_provider"] == "mistral"
+    assert data["news_summary_provider"] == "auto"
+    assert data["email_configured"] is True
+    assert "secret-password" not in response.text
+    assert "reader@example.com" not in response.text
+
+
+def test_app_access_token_protects_api(monkeypatch):
+    from app import main
+
+    monkeypatch.setattr(main, "APP_ACCESS_TOKEN", "secret-token")
+
+    denied = client.get("/preferences")
+    allowed = client.get("/preferences", headers={"X-App-Token": "secret-token"})
+
+    assert denied.status_code == 401
+    assert denied.json()["detail"] == "Missing or invalid app access token."
+    assert allowed.status_code == 200

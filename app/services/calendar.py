@@ -5,10 +5,6 @@ from datetime import datetime
 from typing import Dict, List
 
 from dateutil import parser as dateutil_parser
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
 
 from config import (
     CALENDAR_PROVIDER,
@@ -30,7 +26,11 @@ def _is_mock_calendar() -> bool:
     return _calendar_provider() == "mock"
 
 
-def _ensure_credentials() -> Credentials:
+def _ensure_credentials():
+    from google.auth.transport.requests import Request
+    from google.oauth2.credentials import Credentials
+    from google_auth_oauthlib.flow import InstalledAppFlow
+
     creds = None
     if os.path.exists(GOOGLE_TOKEN_PATH):
         creds = Credentials.from_authorized_user_file(GOOGLE_TOKEN_PATH, SCOPES)
@@ -56,6 +56,8 @@ def _ensure_credentials() -> Credentials:
 
 
 def _get_service():
+    from googleapiclient.discovery import build
+
     creds = _ensure_credentials()
     return build("calendar", "v3", credentials=creds, cache_discovery=False)
 

@@ -1,0 +1,7 @@
+fastapi
+pydantic
+dateparser
+python-dateutil
+httpx
+mangum
+boto3

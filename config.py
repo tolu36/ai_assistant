@@ -28,6 +28,56 @@ def _env(name: str, default: str = "") -> str:
     return value
 
 
+SECRETS_PROVIDER = _env("SECRETS_PROVIDER", "env").lower()
+SSM_PARAMETER_PREFIX = _env("SSM_PARAMETER_PREFIX", "/personal-ai-assistant/prod")
+_SSM_SECRET_CACHE: dict[str, str] = {}
+
+
+def _ssm_parameter_name(name: str) -> str:
+    suffix = name.lower()
+    prefix = SSM_PARAMETER_PREFIX.rstrip("/")
+    return f"{prefix}/{suffix}"
+
+
+def _get_ssm_secret(name: str) -> str:
+    if name in _SSM_SECRET_CACHE:
+        return _SSM_SECRET_CACHE[name]
+
+    import boto3
+
+    response = boto3.client("ssm").get_parameter(
+        Name=_ssm_parameter_name(name),
+        WithDecryption=True,
+    )
+    value = response["Parameter"]["Value"]
+    _SSM_SECRET_CACHE[name] = value
+    return value
+
+
+def get_secret_value(name: str, default: str = "", required: bool = False) -> str:
+    value = os.getenv(name)
+    if value is not None and value.strip():
+        return value
+
+    if SECRETS_PROVIDER == "ssm":
+        try:
+            secret = _get_ssm_secret(name)
+            if secret.strip():
+                return secret
+        except Exception:
+            if required:
+                raise
+
+    if required and not default:
+        raise RuntimeError(f"{name} is required but was not configured.")
+    return default
+
+
+def secrets_configured() -> dict[str, bool]:
+    names = ("APP_ACCESS_TOKEN", "SMTP_PASSWORD", "MISTRAL_API_KEY")
+    return {name.lower(): bool(get_secret_value(name)) for name in names}
+
+
 TIMEZONE = _env("TIMEZONE", "UTC")
 GOOGLE_CREDENTIALS_PATH = os.getenv(
     "GOOGLE_CREDENTIALS_PATH", "credentials/credentials.json"
@@ -70,10 +120,21 @@ NEWS_SUMMARY_SENTENCES = int(os.getenv("NEWS_SUMMARY_SENTENCES", "5"))
 NEWS_SUMMARY_MAX_ARTICLES = int(os.getenv("NEWS_SUMMARY_MAX_ARTICLES", "6"))
 SPORTS_INTERESTS = os.getenv("SPORTS_INTERESTS", "NBA,NHL")
 SPORTS_TEAMS = os.getenv("SPORTS_TEAMS", "")
-FINANCE_WATCHLIST = os.getenv("FINANCE_WATCHLIST", "")
+FINANCE_WATCHLIST = os.getenv(
+    "FINANCE_WATCHLIST",
+    "XEQT.TO,VEQT.TO,VFV.TO,XIC.TO,ZAG.TO,CASH.TO,VTI,VOO,VT",
+)
 PREFERENCES_DB_PATH = os.getenv("PREFERENCES_DB_PATH", "data/preferences.db")
 SCHEDULER_DB_PATH = os.getenv("SCHEDULER_DB_PATH", "data/scheduler.db")
 BRIEF_HISTORY_DB_PATH = os.getenv("BRIEF_HISTORY_DB_PATH", "data/brief_history.db")
+STORAGE_PROVIDER = _env("STORAGE_PROVIDER", "sqlite")
+DYNAMODB_TABLE_NAME = _env("DYNAMODB_TABLE_NAME", "personal-ai-assistant")
+DYNAMODB_USER_ID = _env("DYNAMODB_USER_ID", "default")
+APP_ACCESS_TOKEN = get_secret_value(
+    "APP_ACCESS_TOKEN",
+    "",
+    required=SECRETS_PROVIDER == "ssm",
+)
 SCOPES = [
     "https://www.googleapis.com/auth/calendar.events",
     "https://www.googleapis.com/auth/calendar.readonly",
@@ -82,7 +143,7 @@ SCOPES = [
 SMTP_HOST = _env("SMTP_HOST", "")
 SMTP_PORT = int(_env("SMTP_PORT", "587"))
 SMTP_USERNAME = _env("SMTP_USERNAME", "")
-SMTP_PASSWORD = _env("SMTP_PASSWORD", "")
+SMTP_PASSWORD = get_secret_value("SMTP_PASSWORD", "")
 SMTP_USE_TLS = _env("SMTP_USE_TLS", "true").lower() in ("1", "true", "yes")
 SMTP_USE_SSL = _env("SMTP_USE_SSL", "false").lower() in ("1", "true", "yes")
 MORNING_BRIEF_FROM_EMAIL = _env("MORNING_BRIEF_FROM_EMAIL", SMTP_USERNAME)
@@ -101,7 +162,7 @@ LLAMA_CPP_MODEL_PATH = os.getenv("LLAMA_CPP_MODEL_PATH", "")
 MISTRAL_API_URL = os.getenv(
     "MISTRAL_API_URL", "https://api.mistral.ai/v1/chat/completions"
 )
-MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "")
+MISTRAL_API_KEY = get_secret_value("MISTRAL_API_KEY", "")
 MISTRAL_MODEL = os.getenv("MISTRAL_MODEL", "mistral-small-latest")
 MISTRAL_MIN_SECONDS_BETWEEN_REQUESTS = float(
     os.getenv("MISTRAL_MIN_SECONDS_BETWEEN_REQUESTS", "1.1")

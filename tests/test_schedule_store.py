@@ -15,7 +15,12 @@ def test_create_and_load_proposal(tmp_path):
 
     created = create_proposal(
         "Study for 2 hours",
-        {"title": "Study", "duration_minutes": 120},
+        {
+            "title": "Study",
+            "duration_minutes": 120,
+            "start_datetime": datetime(2099, 1, 5, 18, 0),
+            "end_datetime": datetime(2099, 1, 5, 20, 0),
+        },
         [slot],
         db_path=str(db_path),
     )
@@ -23,6 +28,7 @@ def test_create_and_load_proposal(tmp_path):
 
     assert loaded["id"] == created["id"]
     assert loaded["status"] == "proposed"
+    assert loaded["parsed"]["start_datetime"] == datetime(2099, 1, 5, 18, 0)
     assert proposal_slots_as_datetimes(loaded)[0] == slot
 
 

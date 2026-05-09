@@ -2,6 +2,7 @@ import os
 import sqlite3
 from typing import Any, Dict, List
 
+from app.services import dynamodb_store
 from config import FINANCE_WATCHLIST, PREFERENCES_DB_PATH, SPORTS_INTERESTS, SPORTS_TEAMS
 
 
@@ -59,6 +60,8 @@ def _connect(db_path: str | None = None) -> sqlite3.Connection:
 
 def load_preferences(db_path: str | None = None) -> Dict[str, List[str]]:
     preferences = default_preferences()
+    if db_path is None and dynamodb_store.is_dynamodb_enabled():
+        return dynamodb_store.load_preferences(preferences)
 
     with _connect(db_path) as connection:
         rows = connection.execute(
@@ -87,6 +90,9 @@ def save_preferences(preferences: Dict[str, Any], db_path: str | None = None) ->
     for key in current:
         if key in preferences:
             current[key] = _clean_values(preferences[key])
+
+    if db_path is None and dynamodb_store.is_dynamodb_enabled():
+        return dynamodb_store.save_preferences(current)
 
     with _connect(db_path) as connection:
         for category, values in current.items():

@@ -142,6 +142,8 @@ or GitHub Actions environment take precedence over `.env`.
 - `MISTRAL_API_KEY` - API key for Mistral when `MODEL_PROVIDER=mistral`
 - `MISTRAL_MODEL` - defaults to `mistral-small-latest`
 - `OPEN_SOURCE_MODEL` - Transformers model name
+- `SECRETS_PROVIDER` - `env` locally, `ssm` for AWS hosted secrets
+- `SSM_PARAMETER_PREFIX` - SSM prefix, defaults to `/personal-ai-assistant/prod`
 - `CALENDAR_PROVIDER` - `mock` or `google`
 - `GOOGLE_CREDENTIALS_PATH` - Google OAuth credentials file
 - `GOOGLE_TOKEN_PATH` - Google OAuth token file
@@ -239,9 +241,10 @@ The finance section is a monitoring brief, not financial advice. It is built to:
 - Include starter monitoring ideas when no watchlist is configured
 - Return structured items with `source`, `title`, `summary`, `link`, and optional tags
 
-Starter monitor ideas include Canadian banks, Canadian sectors, large global
-market movers, and broad ETFs/indexes. They are meant to help you decide what
-to follow, not what to buy or sell.
+Starter monitor ideas focus on broad ETFs and indexes by default, such as
+`XEQT.TO`, `VEQT.TO`, `VFV.TO`, `XIC.TO`, `ZAG.TO`, `CASH.TO`, `VTI`, `VOO`,
+and `VT`. They are meant to help you decide what to follow, not what to buy or
+sell.
 
 ## Current Brief Sources
 
@@ -264,9 +267,13 @@ storing it.
 
 ## Free Hosting Recommendation
 
-Use Oracle Cloud Always Free when you want dynamic preferences from the UI.
-The VPS keeps SQLite state and runs the 9 AM email job from the same app data.
-Setup details are in `docs/oracle-vps-setup.md`.
+Use AWS serverless when you want to stay close to always-free AWS services.
+The hosted app uses Lambda Function URLs, DynamoDB, and EventBridge Scheduler.
+Setup details are in `docs/aws-always-free-serverless.md`.
+
+Use Oracle Cloud Always Free when you want a traditional VPS. The VPS keeps
+SQLite state and runs the 9 AM email job from the same app data. Setup details
+are in `docs/oracle-vps-setup.md`.
 
 Use GitHub Actions only for a simpler scheduled email where preferences are
 edited as GitHub variables. Details are in `docs/free-hosting.md`.

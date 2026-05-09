@@ -25,7 +25,7 @@ async def get_brief_history(limit: int = 10):
 
 
 @router.get("/history/{brief_id}")
-async def get_brief_history_item(brief_id: int):
+async def get_brief_history_item(brief_id: str):
     saved = get_saved_morning_brief(brief_id)
     if not saved:
         raise HTTPException(status_code=404, detail="Morning brief not found.")

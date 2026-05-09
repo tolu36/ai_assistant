@@ -7,6 +7,7 @@ from typing import Any, Dict, List
 
 from dateutil import parser as dateutil_parser
 
+from app.services import dynamodb_store
 from config import SCHEDULER_DB_PATH
 
 
@@ -72,12 +73,24 @@ def _deserialize_slots(slots: List[Dict[str, str]]) -> List[Dict[str, datetime]]
     ]
 
 
+def _deserialize_parsed_task(parsed_json: str) -> Dict[str, Any]:
+    parsed = json.loads(parsed_json)
+    for field in ("start_datetime", "end_datetime"):
+        value = parsed.get(field)
+        if isinstance(value, str) and value:
+            parsed[field] = dateutil_parser.parse(value)
+    return parsed
+
+
 def create_proposal(
     task_text: str,
     parsed: Dict[str, Any],
     slots: List[Dict[str, datetime]],
     db_path: str | None = None,
 ) -> Dict[str, Any]:
+    if db_path is None and dynamodb_store.is_dynamodb_enabled():
+        return dynamodb_store.create_proposal(task_text, parsed, slots)
+
     proposal_id = str(uuid.uuid4())
     now = datetime.now().isoformat()
     stored_slots = _serialize_slots(slots)
@@ -111,6 +124,9 @@ def create_proposal(
 
 
 def get_proposal(proposal_id: str, db_path: str | None = None) -> Dict[str, Any] | None:
+    if db_path is None and dynamodb_store.is_dynamodb_enabled():
+        return dynamodb_store.get_proposal(proposal_id)
+
     with _connect(db_path) as connection:
         row = connection.execute(
             """
@@ -127,7 +143,7 @@ def get_proposal(proposal_id: str, db_path: str | None = None) -> Dict[str, Any]
     return {
         "id": row["id"],
         "task_text": row["task_text"],
-        "parsed": json.loads(row["parsed_json"]),
+        "parsed": _deserialize_parsed_task(row["parsed_json"]),
         "slots": json.loads(row["slots_json"]),
         "status": row["status"],
         "created_at": row["created_at"],
@@ -141,6 +157,9 @@ def update_proposal_slots(
     feedback: str = "",
     db_path: str | None = None,
 ) -> Dict[str, Any] | None:
+    if db_path is None and dynamodb_store.is_dynamodb_enabled():
+        return dynamodb_store.update_proposal_slots(proposal_id, slots, feedback)
+
     stored_slots = _serialize_slots(slots)
     with _connect(db_path) as connection:
         connection.execute(
@@ -156,6 +175,10 @@ def update_proposal_slots(
 
 
 def mark_proposal_confirmed(proposal_id: str, db_path: str | None = None) -> None:
+    if db_path is None and dynamodb_store.is_dynamodb_enabled():
+        dynamodb_store.mark_proposal_confirmed(proposal_id)
+        return
+
     with _connect(db_path) as connection:
         connection.execute(
             "UPDATE schedule_proposals SET status = ? WHERE id = ?",
@@ -170,6 +193,14 @@ def add_constraint(
     end_hour: int | None = None,
     db_path: str | None = None,
 ) -> Dict[str, Any]:
+    if db_path is None and dynamodb_store.is_dynamodb_enabled():
+        return dynamodb_store.add_constraint(
+            reason=reason,
+            raw_feedback=raw_feedback,
+            start_hour=start_hour,
+            end_hour=end_hour,
+        )
+
     constraint_id = str(uuid.uuid4())
     now = datetime.now().isoformat()
     with _connect(db_path) as connection:
@@ -193,6 +224,9 @@ def add_constraint(
 
 
 def list_constraints(db_path: str | None = None) -> List[Dict[str, Any]]:
+    if db_path is None and dynamodb_store.is_dynamodb_enabled():
+        return dynamodb_store.list_constraints()
+
     with _connect(db_path) as connection:
         rows = connection.execute(
             """

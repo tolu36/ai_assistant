@@ -432,6 +432,7 @@ def test_build_finance_section_returns_watchlist_and_headlines(monkeypatch):
 
 
 def test_build_finance_section_without_watchlist_returns_monitor_ideas(monkeypatch):
+    monkeypatch.setattr(brief_generator, "FINANCE_WATCHLIST", "")
     monkeypatch.setattr(
         brief_generator,
         "load_preferences",
@@ -451,7 +452,7 @@ def test_build_finance_section_without_watchlist_returns_monitor_ideas(monkeypat
 
     assert result[0] == "Finance starter monitor list (not investment advice):"
     assert any(
-        isinstance(item, dict) and item.get("category") == "Canadian equities"
+        isinstance(item, dict) and item.get("category") == "All-in-one ETFs"
         for item in result
     )
     assert any(isinstance(item, str) and "Macro watch" in item for item in result)
