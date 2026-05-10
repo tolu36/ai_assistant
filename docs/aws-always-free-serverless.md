@@ -94,8 +94,12 @@ MorningBriefFromEmail: your_email@gmail.com
 MorningBriefToEmail: your_email@gmail.com
 SportsInterests: NBA,NFL
 SportsTeams: OKC Thunder,Toronto Raptors
+FinanceTopics: interest rates,Bank of Canada,inflation,housing,bond yields,global economy,employment,currency
 FinanceWatchlist: XEQT.TO,VEQT.TO,VFV.TO,XIC.TO,ZAG.TO,CASH.TO,VTI,VOO,VT
 NewsSummaryProvider: off
+FinanceIntelligenceProvider: auto
+DailyQuoteEnabled: true
+DailyNoteProvider: auto
 ModelProvider: fallback
 ScheduleExpression: cron(0 9 * * ? *)
 ScheduleTimezone: America/Toronto
@@ -136,15 +140,18 @@ sam build --template-file deploy/aws/template.yaml
 sam deploy --resolve-s3 --no-confirm-changeset --capabilities CAPABILITY_IAM CAPABILITY_AUTO_EXPAND --profile ai-assistant --region us-east-2 --stack-name personal-ai-assistant --template-file .aws-sam/build/template.yaml
 ```
 
-To enable Mistral-backed article summaries after the stack exists:
+To enable Mistral-backed article summaries, finance intelligence, and daily
+notes after the stack exists:
 
 ```powershell
-sam deploy --resolve-s3 --no-confirm-changeset --capabilities CAPABILITY_IAM CAPABILITY_AUTO_EXPAND --profile ai-assistant --region us-east-2 --stack-name personal-ai-assistant --template-file .aws-sam/build/template.yaml --parameter-overrides ModelProvider=mistral NewsSummaryProvider=llm
+sam deploy --resolve-s3 --no-confirm-changeset --capabilities CAPABILITY_IAM CAPABILITY_AUTO_EXPAND --profile ai-assistant --region us-east-2 --stack-name personal-ai-assistant --template-file .aws-sam/build/template.yaml --parameter-overrides ModelProvider=mistral NewsSummaryProvider=llm FinanceIntelligenceProvider=llm DailyNoteProvider=llm DailyQuoteEnabled=true
 ```
 
 Use `NewsSummaryProvider=auto` if you want the app to use LLM summaries only
 when the configured model provider is enabled. Use `NewsSummaryProvider=off`
-to return to RSS-provided summaries.
+to return to RSS-provided summaries. The same pattern applies to
+`FinanceIntelligenceProvider` and `DailyNoteProvider`: use `auto` for LLM when
+available, `llm` to force an LLM attempt, and `off` for deterministic fallback.
 
 ## Important Cost Controls
 

@@ -27,6 +27,9 @@ def test_generate_morning_brief_has_required_sections(monkeypatch):
     result = generate_morning_brief(today=date(2026, 5, 7))
 
     assert result["date"] == "2026-05-07"
+    assert result["daily_quote"][0]["source"] == "Daily Note"
+    assert result["daily_quote"][0]["title"] == "Daily Quote"
+    assert result["daily_quote"][0]["reflection"]
     assert result["news"][0]["title"] == "Mock RSS headline"
     assert result["news"][0]["summary"] == "This is a short test summary."
     assert len(result["sports"]) >= 2
@@ -233,6 +236,33 @@ def test_summarize_article_uses_llm_when_enabled(monkeypatch):
     )
 
 
+def test_daily_note_uses_llm_when_enabled(monkeypatch):
+    monkeypatch.setenv("DAILY_NOTE_PROVIDER", "llm")
+    monkeypatch.setattr(
+        brief_generator,
+        "generate_llm_text",
+        lambda prompt: '{"quote":"Begin with one clear step and let the day gather momentum.","reflection":"What deserves your attention before the day gets noisy?"}',
+    )
+
+    result = brief_generator.build_daily_quote_section(date(2026, 5, 9))
+
+    assert result[0]["generated_by"] == "llm"
+    assert result[0]["title"] == "Daily Quote"
+    assert result[0]["summary"] == "Begin with one clear step and let the day gather momentum."
+    assert result[0]["reflection"] == "What deserves your attention before the day gets noisy?"
+
+
+def test_daily_note_falls_back_when_llm_output_is_invalid(monkeypatch):
+    monkeypatch.setenv("DAILY_NOTE_PROVIDER", "llm")
+    monkeypatch.setattr(brief_generator, "generate_llm_text", lambda prompt: "not json")
+
+    result = brief_generator.build_daily_quote_section(date(2026, 5, 9))
+
+    assert result[0]["generated_by"] == "fallback"
+    assert result[0]["summary"]
+    assert result[0]["reflection"]
+
+
 def test_generate_morning_brief_uses_sports_interests_and_teams(monkeypatch):
     monkeypatch.setattr(
         brief_generator,
@@ -369,7 +399,11 @@ def test_generate_morning_brief_uses_finance_watchlist(monkeypatch):
 
     result = generate_morning_brief(today=date(2026, 5, 7))
 
-    assert result["finance"][0] == "Finance watchlist: AAPL, NVDA, SPY"
+    assert result["finance"][0]["source"] == "Finance Intelligence"
+    assert any(
+        isinstance(item, dict) and "AAPL, NVDA, SPY" in item.get("summary", "")
+        for item in result["finance"]
+    )
 
 
 def test_finance_feed_urls_include_watchlist_feeds(monkeypatch):
@@ -391,6 +425,7 @@ def test_build_finance_section_returns_watchlist_and_headlines(monkeypatch):
         lambda: {
             "sports_interests": [],
             "sports_teams": [],
+            "finance_topics": ["Inflation"],
             "finance_watchlist": ["AAPL", "NVDA"],
         },
     )
@@ -415,14 +450,21 @@ def test_build_finance_section_returns_watchlist_and_headlines(monkeypatch):
 
     result = generate_morning_brief(today=date(2026, 5, 7))
 
-    assert result["finance"][0] == "Finance watchlist: AAPL, NVDA"
-    assert "Macro watch" in result["finance"][1]
+    assert result["finance"][0]["title"] == "Financial news snapshot"
+    assert any(
+        isinstance(item, dict) and "AAPL, NVDA" in item.get("summary", "")
+        for item in result["finance"]
+    )
+    assert any(
+        isinstance(item, dict) and "Macro watch" in item.get("category", "")
+        for item in result["finance"]
+    )
     assert any(
         isinstance(item, dict) and item.get("matched_ticker") == "AAPL"
         for item in result["finance"]
     )
     assert any(
-        isinstance(item, dict) and item.get("impact_area") == "inflation"
+        isinstance(item, dict) and item.get("impact_area", "").lower() == "inflation"
         for item in result["finance"]
     )
     assert any(
@@ -450,9 +492,156 @@ def test_build_finance_section_without_watchlist_returns_monitor_ideas(monkeypat
 
     result = brief_generator.build_finance_section()
 
-    assert result[0] == "Finance starter monitor list (not investment advice):"
+    assert result[0]["source"] == "Finance Intelligence"
     assert any(
         isinstance(item, dict) and item.get("category") == "All-in-one ETFs"
         for item in result
     )
-    assert any(isinstance(item, str) and "Macro watch" in item for item in result)
+    assert any(
+        isinstance(item, dict) and item.get("category") == "Macro watch"
+        for item in result
+    )
+
+
+def test_finance_intelligence_adds_why_it_matters_and_watch_for(monkeypatch):
+    monkeypatch.setenv("FINANCE_INTELLIGENCE_PROVIDER", "off")
+    monkeypatch.setattr(
+        brief_generator,
+        "load_preferences",
+        lambda: {
+            "sports_interests": [],
+            "sports_teams": [],
+            "finance_watchlist": ["VFV.TO"],
+        },
+    )
+    monkeypatch.setattr(
+        brief_generator,
+        "fetch_rss_items",
+        lambda feed_urls, per_feed_limit=8, limit=None: [
+            {
+                "source": "Mock Macro",
+                "title": "Bank of Canada signals interest rate caution",
+                "summary": "Bond yields moved as investors assessed the path for policy rates.",
+                "link": "https://example.com/rates",
+            }
+        ],
+    )
+
+    result = brief_generator.build_finance_section()
+
+    assert result[0]["category"] == "Market context"
+    assert "rate decisions" in result[0]["watch_for"]
+    assert any(
+        isinstance(item, dict)
+        and item.get("impact_area") == "interest rates"
+        and "bond ETF prices" in item.get("why_it_matters", "")
+        for item in result
+    )
+
+
+def test_finance_intelligence_uses_llm_when_enabled(monkeypatch):
+    monkeypatch.setenv("FINANCE_INTELLIGENCE_PROVIDER", "llm")
+    monkeypatch.setattr(
+        brief_generator,
+        "generate_llm_text",
+        lambda prompt: "Markets are focused on inflation and rate expectations. ETF investors should watch bonds, cash yields, and equity concentration. Next, monitor central-bank language and housing data.",
+    )
+    monkeypatch.setattr(
+        brief_generator,
+        "load_preferences",
+        lambda: {
+            "sports_interests": [],
+            "sports_teams": [],
+            "finance_watchlist": ["VFV.TO"],
+        },
+    )
+    monkeypatch.setattr(
+        brief_generator,
+        "fetch_rss_items",
+        lambda feed_urls, per_feed_limit=8, limit=None: [
+            {
+                "source": "Mock Finance",
+                "title": "Inflation report moves markets",
+                "summary": "Investors reassessed rate expectations.",
+                "link": "https://example.com/inflation",
+            }
+        ],
+    )
+
+    result = brief_generator.build_finance_section()
+
+    assert result[0]["summary"].startswith("Markets are focused on inflation")
+
+
+def test_finance_topics_prioritize_financial_news_section(monkeypatch):
+    monkeypatch.setenv("FINANCE_INTELLIGENCE_PROVIDER", "off")
+    monkeypatch.setattr(
+        brief_generator,
+        "load_preferences",
+        lambda: {
+            "sports_interests": [],
+            "sports_teams": [],
+            "finance_topics": ["Bank of Canada", "Housing"],
+            "finance_watchlist": ["VFV.TO"],
+        },
+    )
+    monkeypatch.setattr(
+        brief_generator,
+        "fetch_rss_items",
+        lambda feed_urls, per_feed_limit=8, limit=None: [
+            {
+                "source": "Mock Macro",
+                "title": "Bank of Canada holds rates as housing market cools",
+                "summary": "The central bank said housing activity remains sensitive to borrowing costs.",
+                "link": "https://example.com/boc",
+            },
+            {
+                "source": "Mock Markets",
+                "title": "VFV.TO sees heavy ETF trading as US markets rally",
+                "summary": "Broad US index ETFs moved higher.",
+                "link": "https://example.com/vfv",
+            },
+        ],
+    )
+
+    result = brief_generator.build_finance_section()
+
+    assert any(
+        isinstance(item, dict)
+        and item.get("section") == "financial_news"
+        and item.get("impact_area") == "Bank of Canada"
+        for item in result
+    )
+    assert any(
+        isinstance(item, dict)
+        and item.get("section") == "market_watch"
+        and item.get("matched_ticker") == "VFV.TO"
+        for item in result
+    )
+
+
+def test_generate_morning_brief_includes_source_health_notices(monkeypatch):
+    monkeypatch.setenv("NEWS_RSS_FEEDS", "https://example.com/bad")
+    monkeypatch.setenv("FINANCE_RSS_FEEDS", "")
+    monkeypatch.setattr(
+        brief_generator,
+        "load_preferences",
+        lambda: {
+            "sports_interests": [],
+            "sports_teams": [],
+            "finance_topics": [],
+            "finance_watchlist": [],
+        },
+    )
+    monkeypatch.setattr(
+        brief_generator,
+        "urlopen",
+        lambda request, timeout=3: (_ for _ in ()).throw(TimeoutError("slow feed")),
+    )
+
+    result = generate_morning_brief(today=date(2026, 5, 7))
+
+    assert any(
+        notice["title"] == "RSS feed unavailable"
+        for notice in result["notices"]
+    )

@@ -118,11 +118,22 @@ ARTICLE_FETCH_TIMEOUT_SECONDS = float(os.getenv("ARTICLE_FETCH_TIMEOUT_SECONDS",
 NEWS_SUMMARY_PROVIDER = os.getenv("NEWS_SUMMARY_PROVIDER", "auto")
 NEWS_SUMMARY_SENTENCES = int(os.getenv("NEWS_SUMMARY_SENTENCES", "5"))
 NEWS_SUMMARY_MAX_ARTICLES = int(os.getenv("NEWS_SUMMARY_MAX_ARTICLES", "6"))
+FINANCE_INTELLIGENCE_PROVIDER = os.getenv("FINANCE_INTELLIGENCE_PROVIDER", "auto")
+DAILY_NOTE_PROVIDER = os.getenv("DAILY_NOTE_PROVIDER", "auto")
+DAILY_QUOTE_ENABLED = os.getenv("DAILY_QUOTE_ENABLED", "true").lower() in (
+    "1",
+    "true",
+    "yes",
+)
 SPORTS_INTERESTS = os.getenv("SPORTS_INTERESTS", "NBA,NHL")
 SPORTS_TEAMS = os.getenv("SPORTS_TEAMS", "")
 FINANCE_WATCHLIST = os.getenv(
     "FINANCE_WATCHLIST",
     "XEQT.TO,VEQT.TO,VFV.TO,XIC.TO,ZAG.TO,CASH.TO,VTI,VOO,VT",
+)
+FINANCE_TOPICS = os.getenv(
+    "FINANCE_TOPICS",
+    "interest rates,Bank of Canada,inflation,housing,bond yields,global economy,employment,currency",
 )
 PREFERENCES_DB_PATH = os.getenv("PREFERENCES_DB_PATH", "data/preferences.db")
 SCHEDULER_DB_PATH = os.getenv("SCHEDULER_DB_PATH", "data/scheduler.db")

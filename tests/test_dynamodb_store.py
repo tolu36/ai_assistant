@@ -26,6 +26,7 @@ def test_preferences_use_dynamodb_when_enabled(monkeypatch):
         {
             "sports_interests": ["NBA"],
             "sports_teams": ["OKC Thunder"],
+            "finance_topics": ["Bank of Canada"],
             "finance_watchlist": ["AAPL"],
         }
     )

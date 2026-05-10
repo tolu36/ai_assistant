@@ -4,6 +4,9 @@ from fastapi import APIRouter
 
 from config import (
     CALENDAR_PROVIDER,
+    DAILY_NOTE_PROVIDER,
+    DAILY_QUOTE_ENABLED,
+    FINANCE_INTELLIGENCE_PROVIDER,
     MODEL_PROVIDER,
     NEWS_SUMMARY_PROVIDER,
     SECRETS_PROVIDER,
@@ -26,6 +29,13 @@ def _env(name: str, default: str = "") -> str:
     return value
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None or not value.strip():
+        return default
+    return value.lower() in ("1", "true", "yes")
+
+
 @router.get("")
 async def system_status():
     secret_status = secrets_configured()
@@ -46,6 +56,12 @@ async def system_status():
             "NEWS_SUMMARY_PROVIDER",
             NEWS_SUMMARY_PROVIDER,
         ),
+        "finance_intelligence_provider": _env(
+            "FINANCE_INTELLIGENCE_PROVIDER",
+            FINANCE_INTELLIGENCE_PROVIDER,
+        ),
+        "daily_note_provider": _env("DAILY_NOTE_PROVIDER", DAILY_NOTE_PROVIDER),
+        "daily_quote_enabled": _env_bool("DAILY_QUOTE_ENABLED", DAILY_QUOTE_ENABLED),
         "timezone": _env("TIMEZONE", TIMEZONE),
         "email_configured": email_configured,
         "secrets_provider": _env("SECRETS_PROVIDER", SECRETS_PROVIDER),

@@ -1,5 +1,7 @@
+from contextvars import ContextVar
 from datetime import date
 import html
+import json
 import logging
 import os
 import re
@@ -12,7 +14,11 @@ from app.services.preferences import load_preferences
 from app.services.llm_parser import generate_llm_text, get_llm_status
 from config import (
     ARTICLE_FETCH_TIMEOUT_SECONDS,
+    DAILY_NOTE_PROVIDER,
+    DAILY_QUOTE_ENABLED,
+    FINANCE_INTELLIGENCE_PROVIDER,
     FINANCE_RSS_FEEDS,
+    FINANCE_TOPICS,
     FINANCE_WATCHLIST,
     NEWS_RSS_FEEDS,
     NEWS_SUMMARY_MAX_ARTICLES,
@@ -23,6 +29,10 @@ from config import (
 
 LOGGER = logging.getLogger(__name__)
 RSS_USER_AGENT = "PersonalAIAssistant/0.1 (+https://localhost)"
+_BRIEF_NOTICES: ContextVar[List[Dict[str, str]] | None] = ContextVar(
+    "brief_notices",
+    default=None,
+)
 
 DEFAULT_NEWS_ITEMS = [
     {
@@ -40,8 +50,29 @@ DEFAULT_SPORTS_HEADLINES = [
 ]
 
 DEFAULT_FINANCE_HEADLINES = [
-    "Finance starter monitor list (not investment advice):",
-    "Macro watch: interest rates, inflation, housing, ETF/index flows, and major earnings can affect stocks, ETFs, and housing.",
+    "Finance intelligence is for research and context only, not investment advice.",
+    "Macro watch: interest rates, inflation, housing, ETF/index flows, bonds, cash yields, currency moves, and major earnings can affect ETF portfolios and housing decisions.",
+]
+
+FINANCE_SECTION_FINANCIAL_NEWS = "financial_news"
+FINANCE_SECTION_MARKET_WATCH = "market_watch"
+
+DAILY_QUOTES = [
+    "Small steady actions compound into meaningful progress.",
+    "Start where you are, use what you have, and do the next useful thing.",
+    "A clear mind and a grateful heart make the day easier to lead.",
+    "Progress is built by showing up before everything feels perfect.",
+    "Protect your attention; it is one of your most valuable assets.",
+    "Every useful step today makes tomorrow a little less crowded.",
+    "Calm consistency beats rushed intensity over the long run.",
+    "You do not need the whole path to move one step forward.",
+]
+
+GRATITUDE_PROMPTS = [
+    "Name one person, opportunity, or lesson you are grateful for today.",
+    "Notice one ordinary thing that is making your life easier right now.",
+    "Pick one small win from yesterday and carry that momentum forward.",
+    "Choose one thing you can do today that your future self will appreciate.",
 ]
 
 DEFAULT_FINANCE_MONITOR_IDEAS = [
@@ -123,6 +154,69 @@ FINANCE_MACRO_TOPICS = {
         "quarterly results",
         "forecast",
     ],
+    "employment": [
+        "employment",
+        "jobs",
+        "labour market",
+        "labor market",
+        "unemployment",
+        "wages",
+        "payroll",
+    ],
+    "global economy": [
+        "global economy",
+        "gdp",
+        "recession",
+        "growth",
+        "trade",
+        "tariff",
+        "supply chain",
+        "china",
+        "europe",
+    ],
+    "currency": [
+        "currency",
+        "canadian dollar",
+        "loonie",
+        "usd",
+        "foreign exchange",
+        "fx",
+    ],
+}
+
+FINANCE_TOPIC_IMPACT = {
+    "interest rates": {
+        "why": "Rate changes can affect bond ETF prices, cash ETF yields, mortgage costs, bank earnings, and equity valuations.",
+        "watch": "central bank language, yield moves, mortgage-rate changes, and bond ETF reactions",
+    },
+    "inflation": {
+        "why": "Inflation data can influence rate expectations, real wages, consumer spending, and the balance between stocks, bonds, and cash.",
+        "watch": "CPI trend, food and shelter costs, wage pressure, and market expectations for future cuts or hikes",
+    },
+    "housing": {
+        "why": "Housing news matters for mortgage affordability, household debt, banks, REITs, construction, and your own real estate decisions.",
+        "watch": "sales volume, prices, inventory, rents, mortgage delinquencies, and regional differences",
+    },
+    "etfs and markets": {
+        "why": "Broad market moves can affect diversified ETFs more than single-company headlines.",
+        "watch": "index direction, sector leadership, ETF flows, currency moves, and whether gains are broad or concentrated",
+    },
+    "earnings": {
+        "why": "Earnings and guidance can shift sector sentiment and influence indexes held inside broad ETFs.",
+        "watch": "revenue growth, margins, forward guidance, layoffs, and whether results change the wider market narrative",
+    },
+    "employment": {
+        "why": "Employment and wage data can affect rate expectations, consumer spending, inflation pressure, and recession risk.",
+        "watch": "job growth, unemployment, wages, hours worked, and whether labour data changes central-bank expectations",
+    },
+    "global economy": {
+        "why": "Global growth, trade, and geopolitical economic events can affect broad equity ETFs, commodity prices, currencies, and investor risk appetite.",
+        "watch": "GDP trends, trade policy, commodity moves, China and Europe headlines, supply chains, and recession signals",
+    },
+    "currency": {
+        "why": "Currency moves can affect Canadian investors holding US or global ETFs and can influence import prices and inflation.",
+        "watch": "CAD/USD moves, central-bank divergence, commodity sensitivity, and hedged versus unhedged ETF effects",
+    },
 }
 
 SPORTS_RSS_FEEDS = {
@@ -151,6 +245,30 @@ TEAM_TOKEN_STOPWORDS = {
     "team",
     "united",
 }
+
+
+def _brief_notices() -> List[Dict[str, str]]:
+    notices = _BRIEF_NOTICES.get()
+    if notices is None:
+        return []
+    return notices
+
+
+def _add_brief_notice(
+    title: str,
+    detail: str = "",
+    severity: str = "warn",
+) -> None:
+    notices = _BRIEF_NOTICES.get()
+    if notices is None or len(notices) >= 8:
+        return
+    notice = {
+        "title": title,
+        "severity": severity,
+    }
+    if detail:
+        notice["detail"] = detail
+    notices.append(notice)
 
 
 def _split_csv(value: str) -> List[str]:
@@ -296,6 +414,10 @@ def fetch_rss_headlines(
                     return headlines
         except Exception as exc:
             LOGGER.warning("Could not fetch RSS feed %s: %s", feed_url, exc)
+            _add_brief_notice(
+                "RSS feed unavailable",
+                f"{feed_url}: {exc}",
+            )
 
     return headlines
 
@@ -317,6 +439,10 @@ def fetch_rss_items(
                 return items[:limit]
         except Exception as exc:
             LOGGER.warning("Could not fetch RSS feed %s: %s", feed_url, exc)
+            _add_brief_notice(
+                "RSS feed unavailable",
+                f"{feed_url}: {exc}",
+            )
 
     return items
 
@@ -331,6 +457,10 @@ def fetch_article_text(link: str, max_chars: int = 6000) -> str:
         return _clean_article_html(html_text)[:max_chars]
     except Exception as exc:
         LOGGER.warning("Could not fetch article %s: %s", link, exc)
+        _add_brief_notice(
+            "Article text unavailable",
+            f"{link}: {exc}",
+        )
         return ""
 
 
@@ -341,6 +471,51 @@ def _llm_summary_enabled() -> bool:
     if provider == "llm":
         return True
     return get_llm_status()["enabled"]
+
+
+def _finance_intelligence_enabled() -> bool:
+    provider = os.getenv(
+        "FINANCE_INTELLIGENCE_PROVIDER",
+        FINANCE_INTELLIGENCE_PROVIDER,
+    ).lower()
+    if provider == "off":
+        return False
+    if provider == "llm":
+        return True
+    return get_llm_status()["enabled"]
+
+
+def _daily_quote_enabled() -> bool:
+    value = os.getenv("DAILY_QUOTE_ENABLED")
+    if value is None or not value.strip():
+        return DAILY_QUOTE_ENABLED
+    return value.lower() in ("1", "true", "yes")
+
+
+def _daily_note_provider() -> str:
+    return os.getenv("DAILY_NOTE_PROVIDER", DAILY_NOTE_PROVIDER).lower()
+
+
+def _daily_note_llm_enabled() -> bool:
+    provider = _daily_note_provider()
+    if provider == "off":
+        return False
+    if provider == "llm":
+        return True
+    return get_llm_status()["enabled"]
+
+
+def _extract_json_object(text: str) -> Dict[str, Any]:
+    decoder = json.JSONDecoder()
+    for matcher in re.finditer(r"\{", text or ""):
+        candidate = text[matcher.start() :]
+        try:
+            parsed, _ = decoder.raw_decode(candidate)
+            if isinstance(parsed, dict):
+                return parsed
+        except json.JSONDecodeError:
+            continue
+    return {}
 
 
 def summarize_article(item: Dict[str, str], article_text: str) -> str:
@@ -366,6 +541,10 @@ Article text:
         ) or item.get("summary", "")
     except Exception as exc:
         LOGGER.warning("Could not summarize article with LLM: %s", exc)
+        _add_brief_notice(
+            "News summary fallback",
+            "The LLM summary failed for one or more stories, so RSS summaries were used.",
+        )
         return item.get("summary", "")
 
 
@@ -388,6 +567,83 @@ def _dedupe(values: List[str]) -> List[str]:
             unique.append(value)
             seen.add(value)
     return unique
+
+
+def _fallback_daily_note(brief_date: date) -> Dict[str, str]:
+    quote = DAILY_QUOTES[brief_date.toordinal() % len(DAILY_QUOTES)]
+    reflection = GRATITUDE_PROMPTS[brief_date.toordinal() % len(GRATITUDE_PROMPTS)]
+    return {
+        "source": "Daily Note",
+        "category": "Mindset",
+        "title": "Daily Quote",
+        "summary": quote,
+        "reflection": reflection,
+        "prompt": reflection,
+        "generated_by": "fallback",
+        "link": "",
+    }
+
+
+def _llm_daily_note(brief_date: date) -> Dict[str, str]:
+    if not _daily_note_llm_enabled():
+        return {}
+
+    prompt = f"""
+Create a personal morning daily note for {brief_date.isoformat()}.
+Return only valid JSON with exactly these keys:
+{{
+  "quote": "one original positive or gratitude-focused quote, 8 to 22 words",
+  "reflection": "one short reflection prompt for the user, 8 to 22 words"
+}}
+
+Rules:
+- Make the quote original. Do not quote or attribute a famous person.
+- Keep it grounded, warm, and useful for starting the day.
+- Avoid cliches and avoid religious language.
+- The reflection should ask the user to notice gratitude, progress, focus, or intention.
+- Do not mention that you are an AI.
+"""
+    try:
+        raw = generate_llm_text(prompt)
+        parsed = _extract_json_object(raw)
+        quote = _sentence_summary(str(parsed.get("quote", "")), max_sentences=1)
+        reflection = _sentence_summary(
+            str(parsed.get("reflection", "")),
+            max_sentences=1,
+        )
+        if not quote or not reflection:
+            _add_brief_notice(
+                "Daily note fallback",
+                "The LLM daily note response was not usable, so the built-in fallback was used.",
+            )
+            return {}
+        return {
+            "source": "Daily Note",
+            "category": "Mindset",
+            "title": "Daily Quote",
+            "summary": quote,
+            "reflection": reflection,
+            "prompt": reflection,
+            "generated_by": "llm",
+            "link": "",
+        }
+    except Exception as exc:
+        LOGGER.warning("Could not generate daily note with LLM: %s", exc)
+        _add_brief_notice(
+            "Daily note fallback",
+            "The LLM daily note failed, so the built-in fallback was used.",
+        )
+        return {}
+
+
+def build_daily_quote_section(brief_date: date) -> List[Dict[str, str]]:
+    if not _daily_quote_enabled():
+        return []
+
+    daily_note = _llm_daily_note(brief_date) or _fallback_daily_note(brief_date)
+    return [
+        daily_note
+    ]
 
 
 def _normalize_ticker(value: str) -> str:
@@ -431,6 +687,40 @@ def _match_macro_topic(item: Dict[str, str]) -> str:
         if any(keyword in text for keyword in keywords):
             return topic
     return ""
+
+
+def _topic_match_tokens(topic: str) -> List[str]:
+    tokens = re.findall(r"[a-z0-9]+", topic.lower())
+    return [token for token in tokens if len(token) >= 3]
+
+
+def _matches_finance_topic_text(text: str, topic: str) -> bool:
+    normalized_topic = topic.lower().strip()
+    if not normalized_topic:
+        return False
+    if normalized_topic in text:
+        return True
+    tokens = _topic_match_tokens(topic)
+    if not tokens:
+        return False
+    return all(re.search(rf"\b{re.escape(token)}\b", text) for token in tokens)
+
+
+def _match_user_finance_topic(item: Dict[str, str], topics: List[str]) -> str:
+    text = _finance_search_text(item)
+    for topic in topics:
+        if _matches_finance_topic_text(text, topic):
+            return topic
+    return ""
+
+
+def _finance_topic_impact(topic: str) -> Dict[str, str]:
+    normalized = topic.lower().strip()
+    if normalized == "bank of canada":
+        return FINANCE_TOPIC_IMPACT["interest rates"]
+    if normalized == "bond yields":
+        return FINANCE_TOPIC_IMPACT["interest rates"]
+    return FINANCE_TOPIC_IMPACT.get(normalized, {})
 
 
 def _sports_feed_urls(interests: List[str]) -> List[str]:
@@ -578,20 +868,205 @@ def _finance_card(
     item: Dict[str, str],
     matched_ticker: str = "",
     impact_area: str = "",
+    section: str = "",
 ) -> Dict[str, str]:
     summary = item.get("summary", "") or item.get("title", "")
+    category = "Market news"
+    if matched_ticker:
+        category = "Market mover"
+    elif impact_area:
+        category = "Financial news"
+
     card = {
         "source": item.get("source", "Finance"),
-        "category": "Finance",
+        "category": category,
+        "section": section
+        or (
+            FINANCE_SECTION_MARKET_WATCH
+            if matched_ticker
+            else FINANCE_SECTION_FINANCIAL_NEWS
+            if impact_area
+            else FINANCE_SECTION_MARKET_WATCH
+        ),
         "title": item.get("title", ""),
         "summary": _sentence_summary(summary, max_sentences=2),
         "link": item.get("link", ""),
     }
     if matched_ticker:
         card["matched_ticker"] = matched_ticker
+        card["why_it_matters"] = (
+            f"This mentions {matched_ticker}, so compare the story with your "
+            "broader ETF exposure instead of treating one headline as a buy/sell signal."
+        )
     if impact_area:
         card["impact_area"] = impact_area
+        impact = _finance_topic_impact(impact_area)
+        card["why_it_matters"] = impact.get(
+            "why",
+            "This may affect broad markets, ETFs, rates, or household financial decisions.",
+        )
+        card["watch_for"] = impact.get(
+            "watch",
+            "whether the story changes rates, inflation, earnings, or broad market sentiment",
+        )
+    if not matched_ticker and not impact_area:
+        card["why_it_matters"] = (
+            "Use this as market context and check whether it affects broad indexes, "
+            "ETF holdings, rates, currency, or sector concentration."
+        )
     return card
+
+
+def _finance_topic_counts(items: List[Dict[str, str]], topics: List[str]) -> Dict[str, int]:
+    topic_pool = _dedupe(topics + list(FINANCE_MACRO_TOPICS))
+    counts = {topic: 0 for topic in topic_pool}
+    for item in items:
+        topic = _match_user_finance_topic(item, topics) or _match_macro_topic(item)
+        if topic:
+            counts[topic] += 1
+    return counts
+
+
+def _top_finance_topics(
+    items: List[Dict[str, str]],
+    topics: List[str],
+    limit: int = 3,
+) -> List[str]:
+    counts = _finance_topic_counts(items, topics)
+    ranked = sorted(counts.items(), key=lambda pair: pair[1], reverse=True)
+    return [topic for topic, count in ranked if count > 0][:limit]
+
+
+def _finance_headline_digest(items: List[Dict[str, str]], limit: int = 8) -> str:
+    lines = []
+    for item in items[:limit]:
+        source = item.get("source", "Finance")
+        title = item.get("title", "")
+        summary = item.get("summary", "")
+        if title:
+            lines.append(f"- {source}: {title}. {summary}")
+    return "\n".join(lines)
+
+
+def _default_finance_snapshot_summary(
+    headlines: List[Dict[str, str]],
+    watchlist: List[str],
+    topics: List[str],
+) -> str:
+    top_topics = _top_finance_topics(headlines, topics)
+    topic_text = ", ".join(top_topics) if top_topics else "financial news and macro conditions"
+    watch_text = ", ".join(watchlist) if watchlist else "your ETF portfolio"
+    if headlines:
+        return (
+            f"Today's finance feed is highlighting {topic_text}. Use these stories "
+            f"to understand what may affect {watch_text}, especially broad equity ETFs, "
+            "bond ETFs, cash-like ETFs, mortgage costs, and household purchasing power."
+        )
+    return (
+        "Finance feeds did not return live headlines, so use the ETF and macro monitor "
+        "list as a baseline. Focus on rates, inflation, housing, bond yields, broad "
+        "indexes, ETF flows, and major earnings when new stories become available."
+    )
+
+
+def _llm_finance_snapshot_summary(
+    headlines: List[Dict[str, str]],
+    watchlist: List[str],
+    topics: List[str],
+) -> str:
+    if not headlines or not _finance_intelligence_enabled():
+        return ""
+
+    prompt = f"""
+Create a grounded personal finance morning brief using only the headlines below.
+This is education and monitoring context, not financial advice.
+Do not recommend buying, selling, or timing investments.
+Write 3 concise sentences:
+1. What is happening in global/domestic finance.
+2. Why it may matter for ETF-heavy portfolios, housing, rates, or inflation.
+3. What to watch next.
+
+User financial news topics: {', '.join(topics) if topics else 'general financial news'}
+User company/stock/ETF watchlist: {', '.join(watchlist) if watchlist else 'not configured'}
+Headlines:
+{_finance_headline_digest(headlines)}
+"""
+    try:
+        summary = generate_llm_text(prompt)
+        return _sentence_summary(summary, max_sentences=3)
+    except Exception as exc:
+        LOGGER.warning("Could not build finance intelligence with LLM: %s", exc)
+        _add_brief_notice(
+            "Finance intelligence fallback",
+            "The LLM finance synthesis failed, so deterministic finance context was used.",
+        )
+        return ""
+
+
+def _finance_intelligence_cards(
+    headlines: List[Dict[str, str]],
+    watchlist: List[str],
+    topics: List[str],
+) -> List[Dict[str, str]]:
+    summary = _llm_finance_snapshot_summary(headlines, watchlist, topics)
+    if not summary:
+        summary = _default_finance_snapshot_summary(headlines, watchlist, topics)
+
+    watch_text = ", ".join(watchlist) if watchlist else "broad ETF exposure"
+    topic_text = ", ".join(topics) if topics else "rates, inflation, housing, central banks, and global trends"
+    return [
+        {
+            "source": "Finance Intelligence",
+            "category": "Market context",
+            "section": FINANCE_SECTION_FINANCIAL_NEWS,
+            "title": "Financial news snapshot",
+            "summary": summary,
+            "why_it_matters": (
+                "This frames the linked headlines around broad ETFs, rates, "
+                "inflation, housing, bonds, and cash yields rather than single-stock noise."
+            ),
+            "watch_for": (
+                "rate decisions, inflation releases, housing data, bond yields, "
+                "ETF/index flows, earnings guidance, and currency moves"
+            ),
+            "link": "",
+        },
+        {
+            "source": "Finance Intelligence",
+            "category": "ETF lens",
+            "section": FINANCE_SECTION_MARKET_WATCH,
+            "title": "ETF portfolio lens",
+            "summary": (
+                f"Use {watch_text} as context for relevance, not as a recommendation list. "
+                "For ETF-heavy investing, prioritize asset mix, geography, fees, currency, "
+                "bond duration, cash yields, and whether market moves are broad or concentrated."
+            ),
+            "why_it_matters": (
+                "Diversified ETFs can be affected by macro shifts even when the headline "
+                "is about one company, sector, or country."
+            ),
+            "watch_for": (
+                "whether a story affects equities, bonds, cash yields, housing affordability, "
+                "or Canada/US/global allocation"
+            ),
+            "link": "",
+        },
+        {
+            "source": "Finance Intelligence",
+            "category": "Tracked topics",
+            "section": FINANCE_SECTION_FINANCIAL_NEWS,
+            "title": "Financial news focus",
+            "summary": (
+                f"Monitoring {topic_text}. Update Finance Topics in preferences when "
+                "you want the brief to prioritize different macro or economic themes."
+            ),
+            "why_it_matters": (
+                "This keeps the financial news section focused on what you explicitly "
+                "want to understand, similar to sports and team preferences."
+            ),
+            "link": "",
+        },
+    ]
 
 
 def _dedupe_finance_items(items: List[Dict[str, str]]) -> List[Dict[str, str]]:
@@ -608,8 +1083,12 @@ def _dedupe_finance_items(items: List[Dict[str, str]]) -> List[Dict[str, str]]:
 
 def build_finance_section() -> List[Any]:
     preferences = load_preferences()
+    finance_topics = _dedupe(
+        preferences.get("finance_topics")
+        or _get_env_csv("FINANCE_TOPICS", FINANCE_TOPICS)
+    )
     watchlist = _dedupe(
-        preferences["finance_watchlist"]
+        preferences.get("finance_watchlist", [])
         or _get_env_csv("FINANCE_WATCHLIST", FINANCE_WATCHLIST)
     )
     headlines = _dedupe_finance_items(
@@ -621,8 +1100,15 @@ def build_finance_section() -> List[Any]:
 
     for item in headlines:
         matched = _match_watchlist(item, watchlist)
-        impact_area = _match_macro_topic(item)
-        card = _finance_card(item, matched, impact_area)
+        impact_area = _match_user_finance_topic(item, finance_topics) or _match_macro_topic(item)
+        section = (
+            FINANCE_SECTION_MARKET_WATCH
+            if matched
+            else FINANCE_SECTION_FINANCIAL_NEWS
+            if impact_area
+            else FINANCE_SECTION_MARKET_WATCH
+        )
+        card = _finance_card(item, matched, impact_area, section=section)
         if matched:
             watchlist_cards.append(card)
         elif impact_area:
@@ -633,15 +1119,52 @@ def build_finance_section() -> List[Any]:
             break
 
     lines: List[Any] = []
+    lines.extend(_finance_intelligence_cards(headlines, watchlist, finance_topics))
+    lines.append(
+        {
+            "source": "Finance Intelligence",
+            "category": "Important note",
+            "section": FINANCE_SECTION_FINANCIAL_NEWS,
+            "title": "Research context only",
+            "summary": DEFAULT_FINANCE_HEADLINES[0],
+            "link": "",
+        }
+    )
+    lines.append(
+        {
+            "source": "Finance Intelligence",
+            "category": "Macro watch",
+            "section": FINANCE_SECTION_FINANCIAL_NEWS,
+            "title": "What to stay informed on",
+            "summary": DEFAULT_FINANCE_HEADLINES[1],
+            "link": "",
+        }
+    )
     if watchlist:
-        lines.append(f"Finance watchlist: {', '.join(watchlist)}")
+        lines.append(
+            {
+                "source": "Finance Intelligence",
+                "category": "Watchlist context",
+                "section": FINANCE_SECTION_MARKET_WATCH,
+                "title": "Companies, stocks, and ETFs to watch",
+                "summary": (
+                    f"Monitoring {', '.join(watchlist)}. This prioritizes relevance "
+                    "in the brief; it is not a buy or sell recommendation."
+                ),
+                "link": "",
+            }
+        )
     else:
-        lines.extend(DEFAULT_FINANCE_HEADLINES[:1])
-        lines.extend(DEFAULT_FINANCE_MONITOR_IDEAS)
+        lines.extend(
+            {
+                **item,
+                "section": FINANCE_SECTION_MARKET_WATCH,
+            }
+            for item in DEFAULT_FINANCE_MONITOR_IDEAS
+        )
 
-    lines.append(DEFAULT_FINANCE_HEADLINES[1])
-    lines.extend(watchlist_cards[:3])
     lines.extend(macro_cards[:3])
+    lines.extend(watchlist_cards[:3])
     lines.extend(market_cards[:2])
 
     has_live_headline = any(
@@ -652,6 +1175,7 @@ def build_finance_section() -> List[Any]:
             {
                 "source": "Finance",
                 "category": "Finance",
+                "section": FINANCE_SECTION_FINANCIAL_NEWS,
                 "title": "No finance headlines were available",
                 "summary": "Check FINANCE_RSS_FEEDS or network connectivity if this persists. The starter monitor list is still shown so you can decide which companies, ETFs, and macro topics to follow.",
                 "link": "",
@@ -662,10 +1186,17 @@ def build_finance_section() -> List[Any]:
 
 
 def generate_morning_brief(today: date | None = None) -> Dict[str, Any]:
+    token = _BRIEF_NOTICES.set([])
     brief_date = today or date.today()
-    return {
-        "date": brief_date.isoformat(),
-        "news": build_news_section(),
-        "sports": build_sports_section(),
-        "finance": build_finance_section(),
-    }
+    try:
+        brief = {
+            "date": brief_date.isoformat(),
+            "daily_quote": build_daily_quote_section(brief_date),
+            "news": build_news_section(),
+            "sports": build_sports_section(),
+            "finance": build_finance_section(),
+        }
+        brief["notices"] = list(_brief_notices())
+        return brief
+    finally:
+        _BRIEF_NOTICES.reset(token)

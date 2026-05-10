@@ -22,6 +22,14 @@ class EmailConfigurationError(RuntimeError):
     pass
 
 
+BRIEF_SECTIONS = [
+    ("daily_quote", "Daily Note"),
+    ("news", "News"),
+    ("sports", "Sports"),
+    ("finance", "Finance"),
+]
+
+
 def _env(name: str, default: str = "") -> str:
     value = os.getenv(name)
     if value is None or not value.strip():
@@ -113,6 +121,9 @@ def _item_text(item: Any) -> str:
         title = item.get("title")
         summary = item.get("summary")
         link = item.get("link")
+        reflection = item.get("reflection") or item.get("prompt")
+        why_it_matters = item.get("why_it_matters")
+        watch_for = item.get("watch_for")
         tags = [
             item.get("category"),
             item.get("matched_interest"),
@@ -127,6 +138,12 @@ def _item_text(item: Any) -> str:
             parts.append(f"Tags: {tag_text}")
         if summary:
             parts.append(summary)
+        if reflection:
+            parts.append(f"Reflection: {reflection}")
+        if why_it_matters:
+            parts.append(f"Why it matters: {why_it_matters}")
+        if watch_for:
+            parts.append(f"Watch for: {watch_for}")
         if link:
             parts.append(f"Read more: {link}")
         return "\n".join(parts)
@@ -139,6 +156,9 @@ def _item_html(item: Any) -> str:
         title = html.escape(str(item.get("title", "")))
         summary = html.escape(str(item.get("summary", "")))
         link = html.escape(str(item.get("link", "")))
+        reflection = html.escape(str(item.get("reflection") or item.get("prompt", "")))
+        why_it_matters = html.escape(str(item.get("why_it_matters", "")))
+        watch_for = html.escape(str(item.get("watch_for", "")))
         tags = [
             item.get("category"),
             item.get("matched_interest"),
@@ -159,6 +179,9 @@ def _item_html(item: Any) -> str:
           <strong>{title}</strong>
           <div class="tags">{tag_html}</div>
           <p>{summary}</p>
+          {f'<p><strong>Reflection:</strong> {reflection}</p>' if reflection else ''}
+          {f'<p><strong>Why it matters:</strong> {why_it_matters}</p>' if why_it_matters else ''}
+          {f'<p><strong>Watch for:</strong> {watch_for}</p>' if watch_for else ''}
           {read_more}
         </li>
         """
@@ -171,10 +194,10 @@ def _section_items(items: List[Any]) -> List[Any]:
 
 def render_morning_brief_text(brief: Dict[str, Any]) -> str:
     lines = [f"Morning brief for {brief.get('date', '')}", ""]
-    for section in ("news", "sports", "finance"):
-        lines.append(section.title())
-        lines.append("=" * len(section))
-        for item in _section_items(brief.get(section, [])):
+    for section_key, section_label in BRIEF_SECTIONS:
+        lines.append(section_label)
+        lines.append("=" * len(section_label))
+        for item in _section_items(brief.get(section_key, [])):
             lines.append(_item_text(item))
             lines.append("")
     return "\n".join(lines).strip()
@@ -182,9 +205,9 @@ def render_morning_brief_text(brief: Dict[str, Any]) -> str:
 
 def render_morning_brief_html(brief: Dict[str, Any]) -> str:
     sections = []
-    for section in ("news", "sports", "finance"):
-        items = "\n".join(_item_html(item) for item in _section_items(brief.get(section, [])))
-        sections.append(f"<h2>{section.title()}</h2><ul>{items}</ul>")
+    for section_key, section_label in BRIEF_SECTIONS:
+        items = "\n".join(_item_html(item) for item in _section_items(brief.get(section_key, [])))
+        sections.append(f"<h2>{html.escape(section_label)}</h2><ul>{items}</ul>")
 
     return f"""
     <!doctype html>

@@ -8,13 +8,28 @@
 </head>
 <body>
   <main class="shell">
-    <section class="panel">
+    <header class="app-header">
+      <h1>Personal AI Assistant</h1>
+      <button id="refresh-brief" type="button">Refresh Brief</button>
+    </header>
+
+    <section class="panel brief-panel">
       <div class="toolbar">
-        <h1>Personal AI Assistant</h1>
-        <button id="refresh-status" type="button">Refresh Status</button>
+        <h2>Morning Brief</h2>
       </div>
-      <div id="system-status" class="status-grid"></div>
+      <div id="brief" class="brief"></div>
     </section>
+
+    <details class="panel history-panel">
+      <summary>Brief History</summary>
+      <div class="history-content">
+        <div class="toolbar">
+          <h2>Saved Briefs</h2>
+          <button id="load-history" type="button">Load History</button>
+        </div>
+        <div id="brief-history" class="history-list"></div>
+      </div>
+    </details>
 
     <section class="panel">
       <div class="grid">
@@ -29,7 +44,11 @@
             <input id="sports-teams" placeholder="Toronto Raptors, Serena Williams">
           </label>
           <label>
-            Finance Watchlist
+            Finance Topics
+            <input id="finance-topics" placeholder="Interest rates, Bank of Canada, inflation, housing">
+          </label>
+          <label>
+            Companies, Stocks, ETFs
             <input id="finance-watchlist" placeholder="XEQT.TO, VEQT.TO, VFV.TO, XIC.TO, ZAG.TO, CASH.TO">
           </label>
           <button type="submit">Save Preferences</button>
@@ -52,7 +71,7 @@
             </label>
             <div class="button-row">
               <button id="revise-proposal" type="button">Revise Proposal</button>
-              <button id="confirm-proposal" type="button">Confirm Proposal</button>
+              <button id="confirm-proposal" type="button">Confirm All Times</button>
             </div>
           </div>
           <div id="schedule-output" class="schedule-output"></div>
@@ -60,13 +79,16 @@
       </div>
     </section>
 
-    <section class="panel">
-      <div class="toolbar">
-        <h2>Morning Brief</h2>
-        <button id="refresh-brief" type="button">Refresh</button>
+    <details class="panel status-panel">
+      <summary>System Status</summary>
+      <div class="status-content">
+        <div class="toolbar">
+          <h2>Status</h2>
+          <button id="refresh-status" type="button">Refresh Status</button>
+        </div>
+        <div id="system-status" class="status-grid"></div>
       </div>
-      <div id="brief" class="brief"></div>
-    </section>
+    </details>
   </main>
 
   <script src="/static/app.js"></script>

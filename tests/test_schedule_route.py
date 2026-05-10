@@ -115,6 +115,44 @@ def test_confirm_schedule_proposal_creates_events(monkeypatch):
     assert data["created_events"][0]["id"] == "mock-event"
 
 
+def test_confirm_schedule_proposal_can_select_one_slot(monkeypatch):
+    from app.routes import schedule
+
+    monkeypatch.setattr(
+        schedule,
+        "get_proposal",
+        lambda proposal_id: {
+            "id": proposal_id,
+            "parsed": {"title": "Study", "description": "Study"},
+            "slots": [
+                {"start": "2099-01-05T18:00:00", "end": "2099-01-05T20:00:00"},
+                {"start": "2099-01-06T18:00:00", "end": "2099-01-06T20:00:00"},
+            ],
+        },
+    )
+    monkeypatch.setattr(schedule, "mark_proposal_confirmed", lambda proposal_id: None)
+    monkeypatch.setattr(
+        schedule,
+        "create_event",
+        lambda title, start, end, description: {
+            "id": "mock-event",
+            "summary": title,
+            "start": start.isoformat(),
+            "end": end.isoformat(),
+        },
+    )
+
+    response = client.post(
+        "/schedule/proposal/proposal-1/confirm",
+        json={"slot_indexes": [1]},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["created_events"]) == 1
+    assert data["created_events"][0]["start"] == "2099-01-06T18:00:00"
+
+
 def test_revise_schedule_proposal_returns_new_slots(monkeypatch):
     from app.routes import schedule
 
@@ -208,6 +246,7 @@ def test_morning_brief_route_returns_sections(monkeypatch):
         lambda: {
             "sports_interests": ["NBA"],
             "sports_teams": [],
+            "finance_topics": [],
             "finance_watchlist": [],
         },
     )
@@ -229,6 +268,7 @@ def test_morning_brief_route_returns_sections(monkeypatch):
     assert response.status_code == 200
     data = response.json()
     assert "date" in data
+    assert data["daily_quote"][0]["source"] == "Daily Note"
     assert data["news"][0]["title"] == "Mock RSS headline"
     assert data["news"][0]["link"] == "https://example.com/mock"
     assert data["sports"][0]["title"] == "Mock sports headline"
@@ -246,6 +286,7 @@ def test_morning_brief_route_can_save_history(monkeypatch, tmp_path):
         "generate_morning_brief",
         lambda: {
             "date": "2026-05-07",
+            "daily_quote": [],
             "news": [],
             "sports": [],
             "finance": [],
@@ -278,12 +319,14 @@ def test_preferences_route_updates_preferences(monkeypatch, tmp_path):
         json={
             "sports_interests": ["NBA"],
             "sports_teams": ["Toronto Raptors"],
+            "finance_topics": ["Interest rates"],
             "finance_watchlist": ["AAPL"],
         },
     )
 
     assert response.status_code == 200
     assert response.json()["sports_interests"] == ["NBA"]
+    assert response.json()["finance_topics"] == ["Interest rates"]
 
     get_response = client.get("/preferences")
     assert get_response.status_code == 200
@@ -306,6 +349,8 @@ def test_status_route_returns_non_secret_operational_state(monkeypatch):
     monkeypatch.setenv("CALENDAR_PROVIDER", "mock")
     monkeypatch.setenv("MODEL_PROVIDER", "mistral")
     monkeypatch.setenv("NEWS_SUMMARY_PROVIDER", "auto")
+    monkeypatch.setenv("FINANCE_INTELLIGENCE_PROVIDER", "llm")
+    monkeypatch.setenv("DAILY_NOTE_PROVIDER", "llm")
     monkeypatch.setenv("SMTP_HOST", "smtp.example.com")
     monkeypatch.setenv("SMTP_USERNAME", "sender@example.com")
     monkeypatch.setenv("SMTP_PASSWORD", "secret-password")
@@ -319,6 +364,9 @@ def test_status_route_returns_non_secret_operational_state(monkeypatch):
     assert data["calendar_provider"] == "mock"
     assert data["model_provider"] == "mistral"
     assert data["news_summary_provider"] == "auto"
+    assert data["finance_intelligence_provider"] == "llm"
+    assert data["daily_note_provider"] == "llm"
+    assert data["daily_quote_enabled"] is True
     assert data["email_configured"] is True
     assert "secret-password" not in response.text
     assert "reader@example.com" not in response.text

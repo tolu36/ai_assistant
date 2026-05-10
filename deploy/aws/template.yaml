@@ -32,6 +32,9 @@ Parameters:
   FinanceWatchlist:
     Type: String
     Default: XEQT.TO,VEQT.TO,VFV.TO,XIC.TO,ZAG.TO,CASH.TO,VTI,VOO,VT
+  FinanceTopics:
+    Type: String
+    Default: interest rates,Bank of Canada,inflation,housing,bond yields,global economy,employment,currency
   NewsSummaryProvider:
     Type: String
     Default: "off"
@@ -40,6 +43,28 @@ Parameters:
       - "auto"
       - "llm"
     Description: Use off for RSS summaries, llm to require LLM summaries, or auto to use LLM when enabled.
+  FinanceIntelligenceProvider:
+    Type: String
+    Default: "auto"
+    AllowedValues:
+      - "off"
+      - "auto"
+      - "llm"
+    Description: Use off for deterministic finance context, llm to require LLM finance synthesis, or auto to use LLM when enabled.
+  DailyQuoteEnabled:
+    Type: String
+    Default: "true"
+    AllowedValues:
+      - "true"
+      - "false"
+  DailyNoteProvider:
+    Type: String
+    Default: "auto"
+    AllowedValues:
+      - "off"
+      - "auto"
+      - "llm"
+    Description: Use off for fallback daily notes, llm to require LLM daily notes, or auto to use LLM when enabled.
   ModelProvider:
     Type: String
     Default: fallback
@@ -112,8 +137,12 @@ Resources:
           MODEL_PROVIDER: !Ref ModelProvider
           MODEL_FALLBACK_PROVIDER: fallback
           NEWS_SUMMARY_PROVIDER: !Ref NewsSummaryProvider
+          FINANCE_INTELLIGENCE_PROVIDER: !Ref FinanceIntelligenceProvider
+          DAILY_QUOTE_ENABLED: !Ref DailyQuoteEnabled
+          DAILY_NOTE_PROVIDER: !Ref DailyNoteProvider
           SPORTS_INTERESTS: !Ref SportsInterests
           SPORTS_TEAMS: !Ref SportsTeams
+          FINANCE_TOPICS: !Ref FinanceTopics
           FINANCE_WATCHLIST: !Ref FinanceWatchlist
           SMTP_HOST: !Ref SmtpHost
           SMTP_PORT: !Ref SmtpPort

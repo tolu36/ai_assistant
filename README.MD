@@ -24,7 +24,7 @@ Local development still uses SQLite by default, so the app can run without AWS.
 - Accepts natural-language tasks such as "study for 2 hours tonight"
 - Finds available calendar time and avoids conflicts
 - Creates calendar events after a task is scheduled or a proposal is confirmed
-- Generates a morning brief with news, sports, and finance sections
+- Generates a morning brief with daily note, news, sports, and finance sections
 - Stores single-user preferences locally in SQLite or hosted in DynamoDB
 - Sends the morning brief by email from the hosted scheduler
 
@@ -42,12 +42,16 @@ Local development still uses SQLite by default, so the app can run without AWS.
 | --- | --- |
 | Task scheduling | Parses natural-language tasks and schedules calendar events |
 | Schedule proposals | Suggests time slots before booking and accepts feedback |
+| Slot confirmation | Lets you confirm all proposed times or a single proposed time |
 | Calendar conflict checks | Reads busy calendar slots before selecting a time |
-| Morning brief | Shows news, sports, and finance updates |
+| Morning brief | Shows a daily note, news, sports, and finance updates |
+| Brief history | Lets saved briefs be reopened from the UI |
 | Preferences | Stores sports interests, teams, and finance watchlists in SQLite locally or DynamoDB on AWS |
 | Hosted UI | Provides a browser UI through AWS Lambda Function URL |
 | Morning email | Sends the daily brief from EventBridge Scheduler through Gmail SMTP |
 | Status endpoint | Reports non-secret runtime configuration and provider health |
+| Source notices | Shows RSS/article/LLM fallback notices when sources are unavailable |
+| Daily note | Uses the configured LLM when available to add a short daily quote and reflection |
 
 ## Out of Scope for the MVP
 
@@ -179,6 +183,10 @@ or hosting environment take precedence over `.env`.
 - `NEWS_SUMMARY_PROVIDER` - `off`, `llm`, or `auto`
 - `NEWS_RSS_FEEDS` - comma-separated news feeds
 - `FINANCE_RSS_FEEDS` - comma-separated finance and macro feeds
+- `FINANCE_TOPICS` - comma-separated financial news topics such as rates, inflation, housing, Bank of Canada, employment, or global economy
+- `FINANCE_INTELLIGENCE_PROVIDER` - `off`, `auto`, or `llm` for finance synthesis
+- `DAILY_NOTE_PROVIDER` - `off`, `auto`, or `llm` for the daily quote and reflection
+- `DAILY_QUOTE_ENABLED` - `true` or `false`
 - `FINANCE_WATCHLIST` - comma-separated tickers or company names to track
 - `SPORTS_INTERESTS` - comma-separated sports categories
 - `SPORTS_TEAMS` - comma-separated team names
@@ -235,15 +243,30 @@ morning email scheduler. Avoid adding a second scheduler for the same script,
 or you can receive duplicate morning briefs from separate runtimes with
 different configuration.
 
+## Daily Note Behavior
+
+The daily note appears at the top of the morning brief. When
+`DAILY_NOTE_PROVIDER=auto`, the app uses the configured LLM if one is enabled;
+otherwise it falls back to a small built-in set of original quotes and
+reflection prompts. Use `DAILY_NOTE_PROVIDER=llm` when you want to force an LLM
+attempt, while still keeping the fallback if the API is unavailable.
+
+The quote is generated as an original line, not a famous attributed quote. The
+reflection is a short personal cue for gratitude, focus, progress, or intention.
+
 ## Finance Brief Behavior
 
 The finance section is a monitoring brief, not financial advice. It is built to:
 
-- Show your configured finance watchlist from the UI or `FINANCE_WATCHLIST`
+- Split the finance brief into financial news/macro context and companies, stocks, ETFs to watch
+- Lead with broad domestic/global financial context
+- Explain why headlines may matter for ETFs, rates, inflation, housing, bonds, cash yields, and broad markets
+- Use configured finance topics from the UI or `FINANCE_TOPICS` to prioritize financial news
+- Use your configured companies, stocks, and ETF watchlist from the UI or `FINANCE_WATCHLIST` as a market-watch relevance signal
 - Add free Yahoo Finance ticker-specific RSS feeds for watchlist symbols
 - Surface macro stories about rates, inflation, housing, ETFs, indexes, and earnings
 - Include starter monitoring ideas when no watchlist is configured
-- Return structured items with `source`, `title`, `summary`, `link`, and optional tags
+- Return structured items with `source`, `title`, `summary`, `link`, optional tags, `why_it_matters`, and `watch_for`
 
 Starter monitor ideas focus on broad ETFs and indexes by default, such as
 `XEQT.TO`, `VEQT.TO`, `VFV.TO`, `XIC.TO`, `ZAG.TO`, `CASH.TO`, `VTI`, `VOO`,
@@ -274,6 +297,23 @@ storing it.
 The active hosted deployment uses AWS serverless. It runs the app with Lambda
 Function URLs, DynamoDB, EventBridge Scheduler, SSM Parameter Store, Gmail SMTP,
 and Mistral. Setup details are in `docs/aws-always-free-serverless.md`.
+
+After code changes, rebuild and redeploy from WSL in the repository root:
+
+```bash
+sam build --template-file deploy/aws/template.yaml
+sam deploy --resolve-s3 --no-confirm-changeset --capabilities CAPABILITY_IAM CAPABILITY_AUTO_EXPAND --profile ai-assistant --region us-east-2 --stack-name personal-ai-assistant --template-file .aws-sam/build/template.yaml
+```
+
+To keep the hosted app using Mistral-backed article summaries, finance
+intelligence, and daily notes, deploy with these non-secret parameter overrides:
+
+```bash
+sam deploy --resolve-s3 --no-confirm-changeset --capabilities CAPABILITY_IAM CAPABILITY_AUTO_EXPAND --profile ai-assistant --region us-east-2 --stack-name personal-ai-assistant --template-file .aws-sam/build/template.yaml --parameter-overrides ModelProvider=mistral NewsSummaryProvider=llm FinanceIntelligenceProvider=llm DailyNoteProvider=llm DailyQuoteEnabled=true
+```
+
+Secrets are not passed in deploy commands. Hosted secrets live in SSM Parameter
+Store under the configured `SSM_PARAMETER_PREFIX`.
 
 Use Oracle Cloud Always Free when you want a traditional VPS. The VPS keeps
 SQLite state and runs the 9 AM email job from the same app data. Setup details

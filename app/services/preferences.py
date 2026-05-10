@@ -3,7 +3,13 @@ import sqlite3
 from typing import Any, Dict, List
 
 from app.services import dynamodb_store
-from config import FINANCE_WATCHLIST, PREFERENCES_DB_PATH, SPORTS_INTERESTS, SPORTS_TEAMS
+from config import (
+    FINANCE_TOPICS,
+    FINANCE_WATCHLIST,
+    PREFERENCES_DB_PATH,
+    SPORTS_INTERESTS,
+    SPORTS_TEAMS,
+)
 
 
 def _split_csv(value: str) -> List[str]:
@@ -33,6 +39,7 @@ def default_preferences() -> Dict[str, List[str]]:
     return {
         "sports_interests": _env_csv("SPORTS_INTERESTS", SPORTS_INTERESTS),
         "sports_teams": _env_csv("SPORTS_TEAMS", SPORTS_TEAMS),
+        "finance_topics": _env_csv("FINANCE_TOPICS", FINANCE_TOPICS),
         "finance_watchlist": _env_csv("FINANCE_WATCHLIST", FINANCE_WATCHLIST),
     }
 

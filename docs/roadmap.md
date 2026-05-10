@@ -11,6 +11,8 @@ stay focused on setup, running, and deployment.
 - Mistral is enabled for LLM-backed behavior.
 - EventBridge Scheduler sends the morning brief at 9 AM America/Toronto.
 - Gmail SMTP email delivery has been verified end to end.
+- Daily note is included with an LLM-generated positive quote and reflection prompt when an LLM is enabled.
+- Finance brief now leads with broader market intelligence, ETF context, and macro impact notes.
 
 ## Next Priorities
 
@@ -20,16 +22,16 @@ stay focused on setup, running, and deployment.
 - Track source health so broken or slow RSS feeds are visible in `/status`.
 - Add duplicate detection so the same story is not repeated too often.
 - Add follow-up Q&A for brief items, such as `POST /brief/story/{story_id}/ask`, grounded only in the article text and source link.
-- Add a short gratitude or positive quote of the day to start the brief.
+- Improve daily note personalization once the app has richer user preferences.
 
 ### Finance and Macro Brief
 
-- Shift finance away from only "my watchlist" and toward a broader domestic/global financial briefing.
+- Continue improving the broader domestic/global financial briefing.
 - Cover macro topics that affect ETFs, housing, and long-term investing: interest rates, inflation, employment, GDP, central bank decisions, bond yields, currency moves, and housing/real estate trends.
 - Include Canadian and global market context, not just US stock-market headlines.
 - Surface companies, ETFs, sectors, and stocks worth monitoring, while clearly avoiding personalized investment advice or buy/sell recommendations.
-- Add ETF-first explanations like "why this matters to broad equity ETFs", "why this matters to bond ETFs", and "why this matters to housing/mortgage costs".
-- Keep the user's ETF holdings/watchlist as a personalization input, but use it to prioritize relevance rather than limiting the finance section.
+- Expand ETF-first explanations with more source-grounded detail and better Canadian context.
+- Keep improving how the user's ETF holdings/watchlist prioritize relevance without turning the section into personalized financial advice.
 
 ### Scheduler Intelligence
 

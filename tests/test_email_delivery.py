@@ -5,6 +5,15 @@ from config import _load_dotenv
 def _brief():
     return {
         "date": "2026-05-07",
+        "daily_quote": [
+            {
+                "source": "Daily Note",
+                "category": "Mindset",
+                "title": "Daily Quote",
+                "summary": "Small steady actions compound into meaningful progress.",
+                "reflection": "Name one thing you are grateful for today.",
+            }
+        ],
         "news": [
             {
                 "source": "Mock News",
@@ -22,6 +31,8 @@ def _brief():
                 "summary": "Apple reported earnings.",
                 "link": "https://example.com/aapl",
                 "matched_ticker": "AAPL",
+                "why_it_matters": "ETF context.",
+                "watch_for": "earnings guidance",
             }
         ],
     }
@@ -31,10 +42,15 @@ def test_render_morning_brief_text_includes_sections_and_links():
     text = email_delivery.render_morning_brief_text(_brief())
 
     assert "Morning brief for 2026-05-07" in text
+    assert "Daily Note" in text
+    assert "Daily Note - Daily Quote" in text
+    assert "Reflection: Name one thing you are grateful for today." in text
     assert "News" in text
     assert "Mock News - Headline" in text
     assert "Read more: https://example.com/news" in text
     assert "Tags: Finance, AAPL" in text
+    assert "Why it matters: ETF context." in text
+    assert "Watch for: earnings guidance" in text
 
 
 def test_build_morning_brief_message_uses_email_settings(monkeypatch):
