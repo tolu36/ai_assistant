@@ -4,10 +4,11 @@ This is the recommended setup when preferences should be dynamic. The FastAPI
 app, SQLite databases, and 9 AM email job all run on the same free VPS, so the
 UI can update preferences and the next morning email will use those preferences.
 
-## Why VPS Instead of GitHub Actions
+## Why VPS
 
-GitHub Actions runners are temporary. They do not keep your local SQLite DB or
-UI state between runs unless you add a separate hosted database.
+The Oracle VPS path is useful when you want a traditional always-on Linux
+server instead of AWS serverless. The app, SQLite data, and cron job all live
+on the same machine.
 
 The Oracle VPS keeps:
 
@@ -17,7 +18,7 @@ The Oracle VPS keeps:
 - `.env`
 
 That means you can change sports teams, finance watchlists, and other settings
-through the app UI without editing GitHub variables.
+through the app UI, and the scheduled email will use the same local data.
 
 ## Oracle Resources To Create
 

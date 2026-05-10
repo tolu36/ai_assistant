@@ -163,7 +163,7 @@ curl.exe "http://127.0.0.1:8000/status"
 Key environment variables:
 
 Local `.env` files are loaded automatically. Values already set in your shell
-or GitHub Actions environment take precedence over `.env`.
+or hosting environment take precedence over `.env`.
 
 - `MODEL_PROVIDER` - `fallback`, `transformers`, `mistral`, or `llama_cpp`
 - `MODEL_FALLBACK_PROVIDER` - fallback after the primary model, usually `transformers`
@@ -223,45 +223,17 @@ Then run:
 conda run -n ai_ast python scripts/send_morning_brief.py
 ```
 
-For local Windows scheduling, run:
+For local Windows scheduling, run this only if you are not using the hosted AWS
+EventBridge schedule:
 
 ```powershell
 .\scripts\register_windows_morning_brief_task.ps1
 ```
 
-The current hosted MVP uses AWS EventBridge Scheduler. GitHub Actions remains
-available only as a simpler alternate path where preferences are edited as
-GitHub variables:
-
-```text
-.github/workflows/morning-brief-email.yml
-```
-
-It runs every day at 9:00 AM in `America/Toronto` and can also be started
-manually from the GitHub Actions tab.
-
-Add these repository secrets before enabling the workflow:
-
-- `SMTP_HOST`
-- `SMTP_PORT`
-- `SMTP_USERNAME`
-- `SMTP_PASSWORD`
-- `MORNING_BRIEF_TO_EMAIL`
-
-Optional secrets:
-
-- `MORNING_BRIEF_FROM_EMAIL`
-- `MORNING_BRIEF_SUBJECT_PREFIX`
-- `SMTP_USE_TLS`
-- `SMTP_USE_SSL`
-
-Optional feed and preference values can be added as GitHub repository variables:
-
-- `NEWS_RSS_FEEDS`
-- `SPORTS_INTERESTS`
-- `SPORTS_TEAMS`
-- `FINANCE_WATCHLIST`
-- `FINANCE_RSS_FEEDS`
+The current hosted MVP uses AWS EventBridge Scheduler as the only production
+morning email scheduler. Avoid adding a second scheduler for the same script,
+or you can receive duplicate morning briefs from separate runtimes with
+different configuration.
 
 ## Finance Brief Behavior
 
@@ -307,9 +279,6 @@ Use Oracle Cloud Always Free when you want a traditional VPS. The VPS keeps
 SQLite state and runs the 9 AM email job from the same app data. Setup details
 are in `docs/oracle-vps-setup.md`.
 
-Use GitHub Actions only for a simpler scheduled email where preferences are
-edited as GitHub variables. Details are in `docs/free-hosting.md`.
-
 ## Roadmap
 
 Future improvements and wishlist items are tracked in `docs/roadmap.md`.
@@ -323,7 +292,6 @@ ai_assistant/
 |   +-- routes/
 |   +-- services/
 |   +-- static/
-+-- .github/
 +-- deploy/
 +-- docs/
 +-- scripts/

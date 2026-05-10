@@ -5,9 +5,6 @@ This MVP has two different hosting needs:
 1. A scheduled daily job that sends the morning email.
 2. An optional always-on server for the FastAPI UI.
 
-For a static scheduled email, GitHub Actions is the easiest free default. It
-can run the brief email script once per day without keeping a server online.
-
 For dynamic app preferences on AWS, use the serverless path in
 `docs/aws-always-free-serverless.md`. It uses Lambda Function URLs, DynamoDB,
 and EventBridge Scheduler instead of an EC2 VPS.
@@ -18,15 +15,6 @@ and available capacity in your home region. The setup guide is in
 `docs/oracle-vps-setup.md`.
 
 ## Recommended MVP Path
-
-Use GitHub Actions only if you are comfortable editing preferences as GitHub
-variables:
-
-- It is free for public repositories and includes free minutes for private repos
-  depending on your GitHub plan.
-- It supports scheduled workflows with POSIX cron and timezone-aware scheduling.
-- It stores SMTP credentials as repository secrets.
-- It does not require a 24/7 server for a once-daily email.
 
 Use AWS serverless when you want dynamic preferences without a server:
 
@@ -41,56 +29,12 @@ want a traditional Linux server:
 - Oracle documents Always Free compute VM instances.
 - Oracle documents Ampere A1 Arm capacity equivalent to 4 OCPUs and 24 GB memory
   across Always Free A1 instances.
-- Capacity can be unavailable in some regions, so GitHub Actions is still the
-  lower-friction scheduled-job path.
+- Capacity can be unavailable in some regions.
 
 Official references:
 
-- GitHub Actions workflow syntax: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax
-- GitHub Actions billing and free usage: https://docs.github.com/en/actions/learn-github-actions/usage-limits-billing-and-administration
 - Oracle Cloud Free Tier: https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier.htm
 - Oracle Always Free resources: https://docs.oracle.com/iaas/Content/FreeTier/resourceref.htm
-
-## GitHub Actions Setup
-
-The workflow is in `.github/workflows/morning-brief-email.yml`.
-
-Add these required repository secrets:
-
-- `SMTP_HOST`
-- `SMTP_PORT`
-- `SMTP_USERNAME`
-- `SMTP_PASSWORD`
-- `MORNING_BRIEF_TO_EMAIL`
-
-Optional repository secrets:
-
-- `MORNING_BRIEF_FROM_EMAIL`
-- `MORNING_BRIEF_SUBJECT_PREFIX`
-- `SMTP_USE_TLS`
-- `SMTP_USE_SSL`
-
-Optional repository variables:
-
-- `NEWS_RSS_FEEDS`
-- `SPORTS_INTERESTS`
-- `SPORTS_TEAMS`
-- `FINANCE_WATCHLIST`
-- `FINANCE_RSS_FEEDS`
-
-The workflow runs at 9:00 AM in `America/Toronto` and can also be started
-manually with `workflow_dispatch`. It validates SMTP settings before fetching
-feeds so missing secrets fail quickly.
-
-Before running the workflow, test the same SMTP values locally:
-
-```powershell
-conda run -n ai_ast python scripts/send_morning_brief.py --dry-run
-conda run -n ai_ast python scripts/send_morning_brief.py
-```
-
-If the real send reports that the sender is missing, set either
-`MORNING_BRIEF_FROM_EMAIL` or `SMTP_USERNAME`.
 
 ## Oracle Cloud Always Free VPS Setup
 

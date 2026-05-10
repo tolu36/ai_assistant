@@ -123,6 +123,10 @@ curl.exe -H "X-App-Token: $token" "$url/status"
 The morning email schedule is created by `deploy/aws/template.yaml` and runs at
 9 AM America/Toronto. It retries failed runs at most 3 times within one hour.
 
+Keep this as the only active production schedule. Do not add another scheduled
+runner for `scripts/send_morning_brief.py`, or the app can send duplicate
+emails from separate runtimes with different configuration and preferences.
+
 ## Updating The App
 
 After code changes:
