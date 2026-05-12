@@ -573,6 +573,50 @@ def test_finance_intelligence_uses_llm_when_enabled(monkeypatch):
     assert result[0]["summary"].startswith("Markets are focused on inflation")
 
 
+def test_finance_intelligence_strips_llm_markdown(monkeypatch):
+    monkeypatch.setenv("FINANCE_INTELLIGENCE_PROVIDER", "llm")
+    monkeypatch.setattr(
+        brief_generator,
+        "generate_llm_text",
+        lambda prompt: (
+            "**Morning Brief: ETF Distributions & Market Context** "
+            "1. **What’s happening:** ETF providers announced distributions. "
+            "2. **Why it matters:** ETF investors should understand cash flow and tax context. "
+            "3. **What to watch next:** Watch rates, inflation, and broad market moves."
+        ),
+    )
+    monkeypatch.setattr(
+        brief_generator,
+        "load_preferences",
+        lambda: {
+            "sports_interests": [],
+            "sports_teams": [],
+            "finance_watchlist": ["VEQT.TO"],
+        },
+    )
+    monkeypatch.setattr(
+        brief_generator,
+        "fetch_rss_items",
+        lambda feed_urls, per_feed_limit=8, limit=None: [
+            {
+                "source": "Mock Finance",
+                "title": "ETF distributions announced",
+                "summary": "Several ETF providers announced distributions.",
+                "link": "https://example.com/etf",
+            }
+        ],
+    )
+
+    result = brief_generator.build_finance_section()
+    summary = result[0]["summary"]
+
+    assert "**" not in summary
+    assert "Morning Brief" not in summary
+    assert "1." not in summary
+    assert "What’s happening" not in summary
+    assert summary.startswith("ETF providers announced distributions.")
+
+
 def test_finance_topics_prioritize_financial_news_section(monkeypatch):
     monkeypatch.setenv("FINANCE_INTELLIGENCE_PROVIDER", "off")
     monkeypatch.setattr(

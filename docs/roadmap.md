@@ -51,11 +51,19 @@ stay focused on setup, running, and deployment.
 
 ### UI and User Experience
 
-- Add a brief history view so past emails can be reviewed from the app.
-- Improve scheduler proposal cards and confirmation flows.
+- Continue polishing the brief history view so past emails can be searched, filtered, and reopened from the app.
+- Continue improving scheduler proposal cards and confirmation flows.
 - Add clearer error banners for token/auth, feed failures, email failures, and LLM fallback.
 - Improve mobile layout and touch targets.
 - Add a settings screen for preferences, source lists, schedule time, and status.
+
+### Read Aloud and Voice Experience
+
+- Add a read-aloud control for the morning brief so the app can speak the daily note, news, sports, and finance sections.
+- Start with browser/Android text-to-speech using the Web Speech API where available, keeping it free and local to the device.
+- Add controls for play, pause, stop, section skipping, and reading speed.
+- Create a cleaner spoken version of the brief so links, source labels, and repeated headings do not sound awkward.
+- Later, evaluate higher-quality cloud TTS only if the free browser/device voice is not good enough.
 
 ### Android App Path
 

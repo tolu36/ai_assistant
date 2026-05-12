@@ -342,6 +342,30 @@ def _sentence_summary(text: str, max_sentences: int = 5) -> str:
     return " ".join(sentences[:max_sentences])
 
 
+def _clean_llm_plain_summary(text: str, max_sentences: int = 3) -> str:
+    cleaned = _clean_text(text)
+    if not cleaned:
+        return ""
+
+    cleaned = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", cleaned)
+    cleaned = re.sub(r"[*_`#>]+", "", cleaned)
+    cleaned = re.sub(
+        r"^\s*(?:Morning Brief|Finance Brief)\s*:\s*.*?(?=\s+\d+[\).]\s+)",
+        " ",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    cleaned = re.sub(r"(^|\s)(?:\d+[\).]|[-•])\s+", " ", cleaned)
+    cleaned = re.sub(
+        r"\b(?:what[’']?s happening|why it matters|what to watch next|watch next|watch for)\s*:\s*",
+        "",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return _sentence_summary(cleaned, max_sentences=max_sentences)
+
+
 def _feed_title(root: ET.Element) -> str:
     channel = root.find("channel")
     if channel is not None:
@@ -985,6 +1009,8 @@ Write 3 concise sentences:
 1. What is happening in global/domestic finance.
 2. Why it may matter for ETF-heavy portfolios, housing, rates, or inflation.
 3. What to watch next.
+Return plain text only. Do not use markdown, bold text, bullets, numbering,
+headings, labels, or section titles.
 
 User financial news topics: {', '.join(topics) if topics else 'general financial news'}
 User company/stock/ETF watchlist: {', '.join(watchlist) if watchlist else 'not configured'}
@@ -993,7 +1019,7 @@ Headlines:
 """
     try:
         summary = generate_llm_text(prompt)
-        return _sentence_summary(summary, max_sentences=3)
+        return _clean_llm_plain_summary(summary, max_sentences=3)
     except Exception as exc:
         LOGGER.warning("Could not build finance intelligence with LLM: %s", exc)
         _add_brief_notice(
