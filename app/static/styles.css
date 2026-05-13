@@ -92,7 +92,19 @@ input {
   font-size: 15px;
 }
 
-input:focus {
+select {
+  min-height: 38px;
+  margin-top: 6px;
+  padding: 8px 10px;
+  border: 1px solid #aeb9c7;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #17202b;
+  font-size: 15px;
+}
+
+input:focus,
+select:focus {
   border-color: #176b87;
   outline: 3px solid #d9edf3;
 }
@@ -142,6 +154,62 @@ button:disabled {
 .brief {
   display: grid;
   gap: 18px;
+}
+
+.read-aloud {
+  display: grid;
+  grid-template-columns: auto minmax(140px, 180px) minmax(220px, 1fr) minmax(120px, auto);
+  gap: 12px;
+  align-items: end;
+  margin: 12px 0 18px;
+  padding: 12px;
+  border: 1px solid #d6dee7;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.read-buttons {
+  align-items: end;
+}
+
+.compact-control {
+  margin-bottom: 0;
+}
+
+.compact-control input[type="range"] {
+  padding: 0;
+}
+
+.rate-control {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px 10px;
+  align-items: center;
+}
+
+.rate-control input,
+.rate-control select {
+  grid-column: 1;
+}
+
+.rate-control span {
+  grid-column: 2;
+  grid-row: 2;
+  color: #394654;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.read-status {
+  align-self: center;
+  min-height: 20px;
+  color: #586574;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.read-status.error {
+  color: #8c1d18;
 }
 
 .daily-note {
@@ -456,6 +524,10 @@ button:disabled {
   .toolbar {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .read-aloud {
+    grid-template-columns: 1fr;
   }
 
   .grid,

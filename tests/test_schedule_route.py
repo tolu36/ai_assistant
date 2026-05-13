@@ -1,10 +1,8 @@
 from fastapi.testclient import TestClient
 
-from app import main
 from app.main import app
 
 
-main.APP_ACCESS_TOKEN = ""
 client = TestClient(app)
 
 
@@ -283,6 +281,14 @@ def test_morning_brief_route_can_save_history(monkeypatch, tmp_path):
     monkeypatch.setenv("NEWS_SUMMARY_PROVIDER", "off")
     monkeypatch.setattr(
         brief,
+        "queue_brief_audio_generation",
+        lambda brief_data, history_id, background_tasks: {
+            "available": False,
+            "status": "disabled",
+        },
+    )
+    monkeypatch.setattr(
+        brief,
         "generate_morning_brief",
         lambda: {
             "date": "2026-05-07",
@@ -372,14 +378,7 @@ def test_status_route_returns_non_secret_operational_state(monkeypatch):
     assert "reader@example.com" not in response.text
 
 
-def test_app_access_token_protects_api(monkeypatch):
-    from app import main
+def test_api_routes_are_public_for_single_user_mvp():
+    response = client.get("/preferences")
 
-    monkeypatch.setattr(main, "APP_ACCESS_TOKEN", "secret-token")
-
-    denied = client.get("/preferences")
-    allowed = client.get("/preferences", headers={"X-App-Token": "secret-token"})
-
-    assert denied.status_code == 401
-    assert denied.json()["detail"] == "Missing or invalid app access token."
-    assert allowed.status_code == 200
+    assert response.status_code == 200

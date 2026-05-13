@@ -16,6 +16,7 @@ from config import (
     STORAGE_PROVIDER,
     TIMEZONE,
     MORNING_BRIEF_TO_EMAIL,
+    MISTRAL_TTS_MODEL,
     secrets_configured,
 )
 
@@ -37,7 +38,7 @@ def _env_bool(name: str, default: bool) -> bool:
 
 
 @router.get("")
-async def system_status():
+def system_status():
     secret_status = secrets_configured()
     email_configured = all(
         [
@@ -62,6 +63,10 @@ async def system_status():
         ),
         "daily_note_provider": _env("DAILY_NOTE_PROVIDER", DAILY_NOTE_PROVIDER),
         "daily_quote_enabled": _env_bool("DAILY_QUOTE_ENABLED", DAILY_QUOTE_ENABLED),
+        "tts_provider": "mistral",
+        "tts_model": _env("MISTRAL_TTS_MODEL", MISTRAL_TTS_MODEL),
+        "tts_configured": secret_status.get("mistral_api_key", False),
+        "auth_configured": secret_status.get("app_access_token", False),
         "timezone": _env("TIMEZONE", TIMEZONE),
         "email_configured": email_configured,
         "secrets_provider": _env("SECRETS_PROVIDER", SECRETS_PROVIDER),

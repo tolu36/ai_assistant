@@ -90,13 +90,13 @@ SCHEDULER_DAY_END_HOUR = int(os.getenv("SCHEDULER_DAY_END_HOUR", "22"))
 SCHEDULER_DEFAULT_HOUR = int(os.getenv("SCHEDULER_DEFAULT_HOUR", "18"))
 DEFAULT_NEWS_RSS_FEEDS = ",".join(
     [
+        "https://news.google.com/rss?hl=en-CA&gl=CA&ceid=CA:en",
+        "https://news.google.com/rss/headlines/section/topic/WORLD?hl=en-CA&gl=CA&ceid=CA:en",
         "https://feeds.bbci.co.uk/news/world/rss.xml",
-        "https://www.cbsnews.com/latest/rss/world",
+        "https://feeds.npr.org/1001/rss.xml",
+        "https://rss.cbc.ca/lineup/topstories.xml",
         "https://www.theguardian.com/world/rss",
-        "https://nationalpost.com/feed/",
-        "https://globalnews.ca/feed/",
-        "https://globalnews.ca/canada/feed/",
-        "https://globalnews.ca/world/feed/",
+        "https://www.aljazeera.com/xml/rss/all.xml",
     ]
 )
 DEFAULT_FINANCE_RSS_FEEDS = ",".join(
@@ -113,8 +113,13 @@ DEFAULT_FINANCE_RSS_FEEDS = ",".join(
 )
 NEWS_RSS_FEEDS = os.getenv("NEWS_RSS_FEEDS", DEFAULT_NEWS_RSS_FEEDS)
 FINANCE_RSS_FEEDS = os.getenv("FINANCE_RSS_FEEDS", DEFAULT_FINANCE_RSS_FEEDS)
-RSS_TIMEOUT_SECONDS = float(os.getenv("RSS_TIMEOUT_SECONDS", "3"))
+RSS_TIMEOUT_SECONDS = float(os.getenv("RSS_TIMEOUT_SECONDS", "1.5"))
 ARTICLE_FETCH_TIMEOUT_SECONDS = float(os.getenv("ARTICLE_FETCH_TIMEOUT_SECONDS", "5"))
+OUTBOUND_HTTP_TRUST_ENV = os.getenv("OUTBOUND_HTTP_TRUST_ENV", "false").lower() in (
+    "1",
+    "true",
+    "yes",
+)
 NEWS_SUMMARY_PROVIDER = os.getenv("NEWS_SUMMARY_PROVIDER", "auto")
 NEWS_SUMMARY_SENTENCES = int(os.getenv("NEWS_SUMMARY_SENTENCES", "5"))
 NEWS_SUMMARY_MAX_ARTICLES = int(os.getenv("NEWS_SUMMARY_MAX_ARTICLES", "6"))
@@ -138,14 +143,24 @@ FINANCE_TOPICS = os.getenv(
 PREFERENCES_DB_PATH = os.getenv("PREFERENCES_DB_PATH", "data/preferences.db")
 SCHEDULER_DB_PATH = os.getenv("SCHEDULER_DB_PATH", "data/scheduler.db")
 BRIEF_HISTORY_DB_PATH = os.getenv("BRIEF_HISTORY_DB_PATH", "data/brief_history.db")
+BRIEF_AUDIO_DIR = os.getenv("BRIEF_AUDIO_DIR", "data/brief_audio")
+BRIEF_AUDIO_OBJECT_BUCKET = os.getenv("BRIEF_AUDIO_OBJECT_BUCKET", "")
+BRIEF_AUDIO_OBJECT_PREFIX = os.getenv("BRIEF_AUDIO_OBJECT_PREFIX", "brief-audio")
+BRIEF_AUDIO_OBJECT_ENDPOINT_URL = os.getenv("BRIEF_AUDIO_OBJECT_ENDPOINT_URL", "")
+BRIEF_AUDIO_OBJECT_REGION = os.getenv("BRIEF_AUDIO_OBJECT_REGION", "auto")
+BRIEF_AUDIO_OBJECT_ACCESS_KEY_ID = get_secret_value(
+    "BRIEF_AUDIO_OBJECT_ACCESS_KEY_ID",
+    get_secret_value("CLOUDFLARE_R2_ACCESS_KEY_ID", ""),
+)
+BRIEF_AUDIO_OBJECT_SECRET_ACCESS_KEY = get_secret_value(
+    "BRIEF_AUDIO_OBJECT_SECRET_ACCESS_KEY",
+    get_secret_value("CLOUDFLARE_R2_SECRET_ACCESS_KEY", ""),
+)
+BRIEF_AUDIO_RETENTION_DAYS = int(os.getenv("BRIEF_AUDIO_RETENTION_DAYS", "7"))
 STORAGE_PROVIDER = _env("STORAGE_PROVIDER", "sqlite")
 DYNAMODB_TABLE_NAME = _env("DYNAMODB_TABLE_NAME", "personal-ai-assistant")
 DYNAMODB_USER_ID = _env("DYNAMODB_USER_ID", "default")
-APP_ACCESS_TOKEN = get_secret_value(
-    "APP_ACCESS_TOKEN",
-    "",
-    required=SECRETS_PROVIDER == "ssm",
-)
+APP_ACCESS_TOKEN = get_secret_value("APP_ACCESS_TOKEN", "")
 SCOPES = [
     "https://www.googleapis.com/auth/calendar.events",
     "https://www.googleapis.com/auth/calendar.readonly",
@@ -178,3 +193,14 @@ MISTRAL_MODEL = os.getenv("MISTRAL_MODEL", "mistral-small-latest")
 MISTRAL_MIN_SECONDS_BETWEEN_REQUESTS = float(
     os.getenv("MISTRAL_MIN_SECONDS_BETWEEN_REQUESTS", "1.1")
 )
+MISTRAL_TTS_API_URL = os.getenv(
+    "MISTRAL_TTS_API_URL", "https://api.mistral.ai/v1/audio/speech"
+)
+MISTRAL_TTS_MODEL = os.getenv("MISTRAL_TTS_MODEL", "voxtral-mini-tts-2603")
+MISTRAL_TTS_VOICE_ID = os.getenv("MISTRAL_TTS_VOICE_ID", "gb_oliver_confident")
+MISTRAL_TTS_RESPONSE_FORMAT = os.getenv("MISTRAL_TTS_RESPONSE_FORMAT", "mp3")
+MISTRAL_TTS_MAX_CHARS = int(os.getenv("MISTRAL_TTS_MAX_CHARS", "1400"))
+MORNING_BRIEF_PREGENERATE_AUDIO = os.getenv(
+    "MORNING_BRIEF_PREGENERATE_AUDIO", "true"
+).lower() in ("1", "true", "yes")
+FINANCE_TICKER_FEED_LIMIT = int(os.getenv("FINANCE_TICKER_FEED_LIMIT", "4"))

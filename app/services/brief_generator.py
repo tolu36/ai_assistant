@@ -1,4 +1,5 @@
 from contextvars import ContextVar
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 import html
 import json
@@ -7,7 +8,7 @@ import os
 import re
 from typing import Any, Dict, List
 from urllib.parse import quote
-from urllib.request import Request, urlopen
+from urllib.request import Request, build_opener, ProxyHandler, urlopen
 import xml.etree.ElementTree as ET
 
 from app.services.preferences import load_preferences
@@ -18,8 +19,10 @@ from config import (
     DAILY_QUOTE_ENABLED,
     FINANCE_INTELLIGENCE_PROVIDER,
     FINANCE_RSS_FEEDS,
+    FINANCE_TICKER_FEED_LIMIT,
     FINANCE_TOPICS,
     FINANCE_WATCHLIST,
+    OUTBOUND_HTTP_TRUST_ENV,
     NEWS_RSS_FEEDS,
     NEWS_SUMMARY_MAX_ARTICLES,
     NEWS_SUMMARY_PROVIDER,
@@ -29,6 +32,7 @@ from config import (
 
 LOGGER = logging.getLogger(__name__)
 RSS_USER_AGENT = "PersonalAIAssistant/0.1 (+https://localhost)"
+_NO_PROXY_OPENER = build_opener(ProxyHandler({}))
 _BRIEF_NOTICES: ContextVar[List[Dict[str, str]] | None] = ContextVar(
     "brief_notices",
     default=None,
@@ -420,29 +424,66 @@ def parse_rss_items(xml_text: str, limit: int = 5) -> List[Dict[str, str]]:
     return items
 
 
+def _add_rss_failure_notice(failures: List[str], got_items: bool) -> None:
+    if not failures:
+        return
+
+    title = "Some RSS feeds unavailable" if got_items else "RSS sources unavailable"
+    detail = (
+        f"{len(failures)} feed(s) failed. First error: {failures[0]}"
+        if got_items
+        else f"Tried {len(failures)} feed(s). First error: {failures[0]}"
+    )
+    _add_brief_notice(title, detail)
+
+
+def _open_url(request: Request, timeout: float):
+    if OUTBOUND_HTTP_TRUST_ENV:
+        return urlopen(request, timeout=timeout)
+    return _NO_PROXY_OPENER.open(request, timeout=timeout)
+
+
+def _fetch_single_rss_feed(
+    feed_url: str,
+    per_feed_limit: int,
+) -> tuple[List[Dict[str, str]], str]:
+    try:
+        request = Request(feed_url, headers={"User-Agent": RSS_USER_AGENT})
+        with _open_url(request, timeout=RSS_TIMEOUT_SECONDS) as response:
+            xml_text = response.read().decode("utf-8", errors="replace")
+        return parse_rss_items(xml_text, limit=per_feed_limit), ""
+    except Exception as exc:
+        LOGGER.warning("Could not fetch RSS feed %s: %s", feed_url, exc)
+        return [], f"{feed_url}: {exc}"
+
+
 def fetch_rss_headlines(
     feed_urls: List[str],
     limit: int = 6,
     per_feed_limit: int = 2,
 ) -> List[Dict[str, str]]:
     headlines = []
+    failures = []
+    if not feed_urls:
+        return headlines
 
-    for feed_url in feed_urls:
-        try:
-            request = Request(feed_url, headers={"User-Agent": RSS_USER_AGENT})
-            with urlopen(request, timeout=RSS_TIMEOUT_SECONDS) as response:
-                xml_text = response.read().decode("utf-8", errors="replace")
-            for item in parse_rss_items(xml_text, limit=per_feed_limit):
+    max_workers = min(8, len(feed_urls))
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        results = executor.map(
+            lambda url: _fetch_single_rss_feed(url, per_feed_limit),
+            feed_urls,
+        )
+        for items, error in results:
+            if error:
+                failures.append(error)
+                continue
+            for item in items:
                 headlines.append(item)
                 if len(headlines) >= limit:
+                    _add_rss_failure_notice(failures, got_items=True)
                     return headlines
-        except Exception as exc:
-            LOGGER.warning("Could not fetch RSS feed %s: %s", feed_url, exc)
-            _add_brief_notice(
-                "RSS feed unavailable",
-                f"{feed_url}: {exc}",
-            )
 
+    _add_rss_failure_notice(failures, got_items=bool(headlines))
     return headlines
 
 
@@ -452,22 +493,26 @@ def fetch_rss_items(
     limit: int | None = None,
 ) -> List[Dict[str, str]]:
     items = []
+    failures = []
+    if not feed_urls:
+        return items
 
-    for feed_url in feed_urls:
-        try:
-            request = Request(feed_url, headers={"User-Agent": RSS_USER_AGENT})
-            with urlopen(request, timeout=RSS_TIMEOUT_SECONDS) as response:
-                xml_text = response.read().decode("utf-8", errors="replace")
-            items.extend(parse_rss_items(xml_text, limit=per_feed_limit))
+    max_workers = min(8, len(feed_urls))
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        results = executor.map(
+            lambda url: _fetch_single_rss_feed(url, per_feed_limit),
+            feed_urls,
+        )
+        for feed_items, error in results:
+            if error:
+                failures.append(error)
+                continue
+            items.extend(feed_items)
             if limit is not None and len(items) >= limit:
+                _add_rss_failure_notice(failures, got_items=True)
                 return items[:limit]
-        except Exception as exc:
-            LOGGER.warning("Could not fetch RSS feed %s: %s", feed_url, exc)
-            _add_brief_notice(
-                "RSS feed unavailable",
-                f"{feed_url}: {exc}",
-            )
 
+    _add_rss_failure_notice(failures, got_items=bool(items))
     return items
 
 
@@ -476,7 +521,7 @@ def fetch_article_text(link: str, max_chars: int = 6000) -> str:
         return ""
     try:
         request = Request(link, headers={"User-Agent": RSS_USER_AGENT})
-        with urlopen(request, timeout=ARTICLE_FETCH_TIMEOUT_SECONDS) as response:
+        with _open_url(request, timeout=ARTICLE_FETCH_TIMEOUT_SECONDS) as response:
             html_text = response.read().decode("utf-8", errors="replace")
         return _clean_article_html(html_text)[:max_chars]
     except Exception as exc:
@@ -675,14 +720,14 @@ def _normalize_ticker(value: str) -> str:
 
 
 def _finance_feed_urls(watchlist: List[str] | None = None) -> List[str]:
-    feeds = []
-    for ticker in watchlist or []:
+    feeds = _get_env_csv("FINANCE_RSS_FEEDS", FINANCE_RSS_FEEDS) or []
+    ticker_limit = int(os.getenv("FINANCE_TICKER_FEED_LIMIT", str(FINANCE_TICKER_FEED_LIMIT)))
+    for ticker in (watchlist or [])[: max(0, ticker_limit)]:
         normalized = _normalize_ticker(ticker)
         if normalized:
             feeds.append(
                 f"https://finance.yahoo.com/rss/headline?s={quote(normalized)}"
             )
-    feeds.extend(_get_env_csv("FINANCE_RSS_FEEDS", FINANCE_RSS_FEEDS) or [])
     return _dedupe(feeds)
 
 
@@ -824,9 +869,10 @@ def build_news_section() -> List[Dict[str, str]]:
         return DEFAULT_NEWS_ITEMS
 
     headlines = fetch_rss_headlines(feeds)
-    for item in headlines[:NEWS_SUMMARY_MAX_ARTICLES]:
-        article_text = fetch_article_text(item.get("link", ""))
-        item["summary"] = summarize_article(item, article_text)
+    if _llm_summary_enabled():
+        for item in headlines[:NEWS_SUMMARY_MAX_ARTICLES]:
+            article_text = fetch_article_text(item.get("link", ""))
+            item["summary"] = summarize_article(item, article_text)
     return headlines or [
         {
             "source": "News",

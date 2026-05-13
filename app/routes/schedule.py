@@ -29,7 +29,7 @@ class ReviseProposalRequest(BaseModel):
 
 
 @router.post("/task")
-async def schedule_task(request: ScheduleRequest):
+def schedule_task(request: ScheduleRequest):
     task_text = request.task.strip()
     if not task_text:
         raise HTTPException(status_code=400, detail="Task text must not be empty.")
@@ -55,7 +55,7 @@ async def schedule_task(request: ScheduleRequest):
 
 
 @router.post("/propose")
-async def propose_schedule(request: ScheduleRequest):
+def propose_schedule(request: ScheduleRequest):
     task_text = request.task.strip()
     if not task_text:
         raise HTTPException(status_code=400, detail="Task text must not be empty.")
@@ -83,7 +83,7 @@ async def propose_schedule(request: ScheduleRequest):
 
 
 @router.post("/proposal/{proposal_id}/confirm")
-async def confirm_schedule_proposal(proposal_id: str, request: ConfirmProposalRequest):
+def confirm_schedule_proposal(proposal_id: str, request: ConfirmProposalRequest):
     proposal = get_proposal(proposal_id)
     if not proposal:
         raise HTTPException(status_code=404, detail="Proposal not found.")
@@ -117,7 +117,7 @@ async def confirm_schedule_proposal(proposal_id: str, request: ConfirmProposalRe
 
 
 @router.post("/proposal/{proposal_id}/revise")
-async def revise_schedule_proposal(proposal_id: str, request: ReviseProposalRequest):
+def revise_schedule_proposal(proposal_id: str, request: ReviseProposalRequest):
     proposal = get_proposal(proposal_id)
     if not proposal:
         raise HTTPException(status_code=404, detail="Proposal not found.")

@@ -7,32 +7,58 @@ const splitList = (value) =>
     .filter(Boolean);
 
 const joinList = (items) => (items || []).join(", ");
-let activeProposalId = null;
 const tokenStorageKey = "personal_ai_assistant_app_token";
+let activeProposalId = null;
+let latestBriefData = null;
+let currentUtterance = null;
+let currentAudio = null;
+let currentAudioUrl = null;
+let currentAudioController = null;
+let currentAudioChunks = [];
+let currentAudioIndex = 0;
+let currentAudioQueue = [];
+let currentAudioQueueIndex = 0;
+let currentSpeechText = "";
+let ttsAudioEnabled = false;
+let latestBriefAudioManifest = null;
 
 function withAuthHeaders(headers = {}) {
   const token = localStorage.getItem(tokenStorageKey);
   return token ? { ...headers, "X-App-Token": token } : headers;
 }
 
-async function apiFetch(url, options = {}) {
-  const response = await fetch(url, {
-    ...options,
-    headers: withAuthHeaders(options.headers || {}),
-  });
-  if (response.status !== 401) {
-    return response;
-  }
-
+function promptForAppToken() {
   const token = window.prompt("Enter app access token");
   if (!token) {
-    return response;
+    return "";
   }
   localStorage.setItem(tokenStorageKey, token);
-  return fetch(url, {
-    ...options,
-    headers: withAuthHeaders(options.headers || {}),
-  });
+  return token;
+}
+
+async function apiFetch(url, options = {}) {
+  try {
+    const response = await fetch(url, {
+      ...options,
+      headers: withAuthHeaders(options.headers || {}),
+    });
+    if (response.status !== 401) {
+      return response;
+    }
+
+    const token = promptForAppToken();
+    if (!token) {
+      return response;
+    }
+    return fetch(url, {
+      ...options,
+      headers: withAuthHeaders(options.headers || {}),
+    });
+  } catch (error) {
+    throw new Error(
+      "Could not reach the app server. Refresh the page; if this persists, restart the local server.",
+    );
+  }
 }
 
 async function fetchJson(url, options = {}) {
@@ -55,6 +81,562 @@ function createNotice(message, type = "info") {
   notice.className = `notice ${type}`;
   notice.textContent = message;
   return notice;
+}
+
+function speechSupported() {
+  return "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
+}
+
+function audioSupported() {
+  return "Audio" in window && "URL" in window && "fetch" in window;
+}
+
+function setReadStatus(message, type = "info") {
+  const status = byId("read-status");
+  status.textContent = message;
+  status.className = `read-status ${type}`;
+}
+
+function updateReadButtons(state = "idle") {
+  const play = byId("read-play");
+  const pause = byId("read-pause");
+  const stop = byId("read-stop");
+  play.disabled = state === "loading" || state === "speaking";
+  pause.disabled = state === "idle" || state === "loading";
+  stop.disabled = state === "idle";
+  pause.textContent = state === "paused" ? "Resume" : "Pause";
+}
+
+function readAloudIsIdle() {
+  return !currentAudio && !currentUtterance && !currentAudioController;
+}
+
+function cleanSpeechText(value) {
+  return String(value || "")
+    .replace(/https?:\/\/\S+/g, " ")
+    .replace(/\bETFs\b/g, "E.T.F.s")
+    .replace(/\bETF\b/g, "E.T.F.")
+    .replace(/\bLLMs\b/g, "L.L.M.s")
+    .replace(/\bLLM\b/g, "L.L.M.")
+    .replace(/\bRSS\b/g, "R.S.S.")
+    .replace(/\bAI\b/g, "A.I.")
+    .replace(/\bGDP\b/g, "G.D.P.")
+    .replace(/\bCPI\b/g, "C.P.I.")
+    .replace(/\bTSX\b/g, "T.S.X.")
+    .replace(/\bS&P\b/g, "S and P")
+    .replace(/\bCAD\/USD\b/g, "Canadian dollar to U.S. dollar")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function itemSpeechText(item) {
+  if (!item) {
+    return "";
+  }
+  if (typeof item !== "object") {
+    return cleanSpeechText(item);
+  }
+
+  const parts = [];
+  if (item.title && item.title !== "Daily Quote") {
+    parts.push(item.title);
+  }
+  if (item.summary) {
+    parts.push(item.summary);
+  }
+  if (item.reflection || item.prompt) {
+    parts.push(`Reflection. ${item.reflection || item.prompt}`);
+  }
+  if (item.why_it_matters) {
+    parts.push(`Why it matters. ${item.why_it_matters}`);
+  }
+  if (item.watch_for) {
+    parts.push(`Watch for. ${item.watch_for}`);
+  }
+  return parts.map(cleanSpeechText).filter(Boolean).join(". ");
+}
+
+function sectionSpeechText(title, items) {
+  const lines = (items || []).map(itemSpeechText).filter(Boolean);
+  if (!lines.length) {
+    return "";
+  }
+  return `${title}. ${lines.join(" ")}`;
+}
+
+function briefAudioManifestUrls(manifest, section) {
+  if (!manifest || !manifest.tracks) {
+    return [];
+  }
+
+  const sectionOrder = ["daily_quote", "news", "sports", "finance"];
+  const keys = section && section !== "all" ? [section] : sectionOrder;
+  return keys.flatMap((key) => {
+    const track = manifest.tracks[key];
+    if (!track || !Array.isArray(track.chunks)) {
+      return [];
+    }
+    return track.chunks.map((chunk) => chunk.url).filter(Boolean);
+  });
+}
+
+function dailyNoteSpeechText(items) {
+  const item = (items || []).find((entry) => entry && typeof entry === "object");
+  if (!item) {
+    return "";
+  }
+
+  const parts = [];
+  if (item.summary) {
+    parts.push(`Daily note. ${item.summary}`);
+  }
+  if (item.reflection || item.prompt) {
+    parts.push(`Reflection. ${item.reflection || item.prompt}`);
+  }
+  return parts.map(cleanSpeechText).filter(Boolean).join(" ");
+}
+
+function financeSpeechText(items) {
+  const groups = financeGroups(items || []);
+  const parts = [];
+  const context = sectionSpeechText("Finance context", groups.context);
+  const financialNews = sectionSpeechText(
+    "Financial news and macro trends",
+    groups.financialNews,
+  );
+  const marketWatch = sectionSpeechText(
+    "Companies, stocks, and ETFs to watch",
+    groups.marketWatch,
+  );
+
+  if (context) {
+    parts.push(context);
+  }
+  if (financialNews) {
+    parts.push(financialNews);
+  }
+  if (marketWatch) {
+    parts.push(marketWatch);
+  }
+  return parts.length ? `Finance. ${parts.join(" ")}` : "";
+}
+
+function buildBriefSpeechText(data, section) {
+  if (!data) {
+    return "";
+  }
+
+  const builders = {
+    daily_quote: () => dailyNoteSpeechText(data.daily_quote || []),
+    news: () => sectionSpeechText("News", data.news || []),
+    sports: () => sectionSpeechText("Sports", data.sports || []),
+    finance: () => financeSpeechText(data.finance || []),
+  };
+
+  if (section && section !== "all" && builders[section]) {
+    return builders[section]();
+  }
+
+  return ["daily_quote", "news", "sports", "finance"]
+    .map((key) => builders[key]())
+    .filter(Boolean)
+    .join(" ");
+}
+
+function updateReadRateLabel() {
+  const rate = Number.parseFloat(byId("read-rate").value || "1");
+  byId("read-rate-value").textContent = `${rate.toFixed(2)}x`;
+  if (currentAudio) {
+    currentAudio.playbackRate = rate;
+  }
+}
+
+function splitSpeechText(text, maxChars = 1100) {
+  const clean = cleanSpeechText(text);
+  const sentences = clean.match(/[^.!?]+[.!?]*/g) || [clean];
+  const chunks = [];
+  let current = "";
+
+  sentences.forEach((sentence) => {
+    const trimmed = sentence.trim();
+    if (!trimmed) {
+      return;
+    }
+
+    if (trimmed.length > maxChars) {
+      const words = trimmed.split(/\s+/);
+      let wordChunk = "";
+      words.forEach((word) => {
+        const candidate = wordChunk ? `${wordChunk} ${word}` : word;
+        if (candidate.length > maxChars && wordChunk) {
+          chunks.push(wordChunk);
+          wordChunk = word;
+        } else {
+          wordChunk = candidate;
+        }
+      });
+      if (wordChunk) {
+        chunks.push(wordChunk);
+      }
+      return;
+    }
+
+    const candidate = current ? `${current} ${trimmed}` : trimmed;
+    if (candidate.length > maxChars && current) {
+      chunks.push(current);
+      current = trimmed;
+    } else {
+      current = candidate;
+    }
+  });
+
+  if (current) {
+    chunks.push(current);
+  }
+  return chunks;
+}
+
+function clearCurrentAudio() {
+  if (currentAudio) {
+    currentAudio.pause();
+    currentAudio.removeAttribute("src");
+    currentAudio.load();
+    currentAudio = null;
+  }
+  if (currentAudioUrl) {
+    URL.revokeObjectURL(currentAudioUrl);
+    currentAudioUrl = null;
+  }
+}
+
+function stopSpeech(showStatus = true) {
+  if (speechSupported()) {
+    window.speechSynthesis.cancel();
+  }
+  if (currentAudioController) {
+    currentAudioController.abort();
+    currentAudioController = null;
+  }
+  clearCurrentAudio();
+  currentUtterance = null;
+  currentAudioChunks = [];
+  currentAudioIndex = 0;
+  currentAudioQueue = [];
+  currentAudioQueueIndex = 0;
+  updateReadButtons("idle");
+  if (showStatus) {
+    setReadStatus("Stopped.");
+  }
+}
+
+function toggleSpeechPause() {
+  if (currentAudio) {
+    if (currentAudio.paused) {
+      currentAudio.play();
+      updateReadButtons("speaking");
+      setReadStatus("Playing high-quality audio.");
+    } else {
+      currentAudio.pause();
+      updateReadButtons("paused");
+      setReadStatus("Paused.");
+    }
+    return;
+  }
+
+  if (!speechSupported() || !currentUtterance) {
+    return;
+  }
+
+  if (window.speechSynthesis.paused) {
+    window.speechSynthesis.resume();
+    updateReadButtons("speaking");
+    setReadStatus("Reading.");
+  } else if (window.speechSynthesis.speaking) {
+    window.speechSynthesis.pause();
+    updateReadButtons("paused");
+    setReadStatus("Paused.");
+  }
+}
+
+function playBrowserSpeech(text, statusMessage = "Using browser voice fallback.") {
+  if (!speechSupported()) {
+    setReadStatus("Read aloud is not supported in this browser.", "error");
+    updateReadButtons("idle");
+    return;
+  }
+
+  clearCurrentAudio();
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.rate = Number.parseFloat(byId("read-rate").value || "1");
+  utterance.pitch = 1;
+  utterance.onstart = () => {
+    updateReadButtons("speaking");
+    setReadStatus(statusMessage);
+  };
+  utterance.onend = () => {
+    currentUtterance = null;
+    updateReadButtons("idle");
+    setReadStatus("Finished.");
+  };
+  utterance.onerror = () => {
+    currentUtterance = null;
+    updateReadButtons("idle");
+    setReadStatus("Could not read aloud.", "error");
+  };
+
+  currentUtterance = utterance;
+  window.speechSynthesis.speak(utterance);
+}
+
+async function fetchSpeechAudio(text) {
+  currentAudioController = new AbortController();
+  try {
+    const response = await apiFetch("/tts/speech", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+      signal: currentAudioController.signal,
+    });
+    if (!response.ok) {
+      let detail = `Request failed with ${response.status}`;
+      try {
+        const data = await response.json();
+        detail = data.detail || detail;
+      } catch {
+        detail = response.statusText || detail;
+      }
+      throw new Error(detail);
+    }
+    return response.blob();
+  } finally {
+    currentAudioController = null;
+  }
+}
+
+async function fetchSavedSpeechAudio(url) {
+  currentAudioController = new AbortController();
+  try {
+    const response = await apiFetch(url, {
+      signal: currentAudioController.signal,
+    });
+    if (!response.ok) {
+      let detail = `Request failed with ${response.status}`;
+      try {
+        const data = await response.json();
+        detail = data.detail || detail;
+      } catch {
+        detail = response.statusText || detail;
+      }
+      throw new Error(detail);
+    }
+    return response.blob();
+  } finally {
+    currentAudioController = null;
+  }
+}
+
+async function playMistralAudioChunk() {
+  if (currentAudioIndex >= currentAudioChunks.length) {
+    updateReadButtons("idle");
+    setReadStatus("Finished.");
+    return;
+  }
+
+  const chunkNumber = currentAudioIndex + 1;
+  setReadStatus(`Generating high-quality audio ${chunkNumber}/${currentAudioChunks.length}...`);
+  updateReadButtons("loading");
+  const blob = await fetchSpeechAudio(currentAudioChunks[currentAudioIndex]);
+  clearCurrentAudio();
+
+  currentAudioUrl = URL.createObjectURL(blob);
+  currentAudio = new Audio(currentAudioUrl);
+  currentAudio.playbackRate = Number.parseFloat(byId("read-rate").value || "1");
+  currentAudio.onplay = () => {
+    updateReadButtons("speaking");
+    setReadStatus(`Playing high-quality audio ${chunkNumber}/${currentAudioChunks.length}.`);
+  };
+  currentAudio.onended = () => {
+    clearCurrentAudio();
+    currentAudioIndex += 1;
+    playMistralAudioChunk().catch((error) => {
+      if (error.name === "AbortError") {
+        return;
+      }
+      setReadStatus("High-quality audio failed; using browser voice fallback.", "error");
+      playBrowserSpeech(currentSpeechText);
+    });
+  };
+  currentAudio.onerror = () => {
+    clearCurrentAudio();
+    setReadStatus("High-quality audio failed; using browser voice fallback.", "error");
+    playBrowserSpeech(currentSpeechText);
+  };
+
+  await currentAudio.play();
+}
+
+async function playSavedAudioQueueChunk() {
+  if (currentAudioQueueIndex >= currentAudioQueue.length) {
+    updateReadButtons("idle");
+    setReadStatus("Finished.");
+    return;
+  }
+
+  const chunkNumber = currentAudioQueueIndex + 1;
+  setReadStatus(`Loading saved Mistral audio ${chunkNumber}/${currentAudioQueue.length}...`);
+  updateReadButtons("loading");
+  const blob = await fetchSavedSpeechAudio(currentAudioQueue[currentAudioQueueIndex]);
+  clearCurrentAudio();
+  currentAudioUrl = URL.createObjectURL(blob);
+  currentAudio = new Audio(currentAudioUrl);
+  currentAudio.playbackRate = Number.parseFloat(byId("read-rate").value || "1");
+  currentAudio.onplay = () => {
+    updateReadButtons("speaking");
+    setReadStatus(`Playing saved Mistral audio ${chunkNumber}/${currentAudioQueue.length}.`);
+  };
+  currentAudio.onended = () => {
+    clearCurrentAudio();
+    currentAudioQueueIndex += 1;
+    playSavedAudioQueueChunk().catch((error) => {
+      if (error.name === "AbortError") {
+        return;
+      }
+      setReadStatus("Saved audio failed; generating audio now.", "error");
+      playMistralAudioChunk().catch(() => playBrowserSpeech(currentSpeechText));
+    });
+  };
+  currentAudio.onerror = () => {
+    clearCurrentAudio();
+    setReadStatus("Saved audio failed; generating audio now.", "error");
+    playMistralAudioChunk().catch(() => playBrowserSpeech(currentSpeechText));
+  };
+
+  await currentAudio.play();
+}
+
+async function loadBriefAudioManifest(options = {}) {
+  const quiet = Boolean(options.quiet);
+  if (!latestBriefData || !latestBriefData.history_id || !ttsAudioEnabled) {
+    latestBriefAudioManifest = null;
+    return null;
+  }
+
+  try {
+    const manifest = await fetchJson(`/tts/brief/${encodeURIComponent(latestBriefData.history_id)}`);
+    latestBriefAudioManifest = manifest;
+    if (!quiet && readAloudIsIdle()) {
+      setReadStatus("Ready. Saved Mistral audio available.");
+    }
+    return manifest;
+  } catch {
+    latestBriefAudioManifest = null;
+    if (!quiet && readAloudIsIdle()) {
+      setReadStatus("Saved audio is still being generated; live Mistral audio is available.");
+    }
+    return null;
+  }
+}
+
+async function playSavedBriefAudioIfAvailable(section) {
+  const manifest = latestBriefAudioManifest || (await loadBriefAudioManifest({ quiet: true }));
+  const urls = briefAudioManifestUrls(manifest, section);
+  if (!urls.length) {
+    return false;
+  }
+
+  currentAudioQueue = urls;
+  currentAudioQueueIndex = 0;
+  await playSavedAudioQueueChunk();
+  return true;
+}
+
+async function playSpeech() {
+  const selectedSection = byId("read-section").value;
+  const text = buildBriefSpeechText(latestBriefData, selectedSection);
+  if (!text) {
+    setReadStatus("Load a brief before using read aloud.", "error");
+    return;
+  }
+
+  stopSpeech(false);
+  currentSpeechText = text;
+  currentAudioChunks = splitSpeechText(text);
+  currentAudioIndex = 0;
+
+  if (!audioSupported()) {
+    playBrowserSpeech(text, "Reading with browser voice.");
+    return;
+  }
+
+  if (!ttsAudioEnabled) {
+    await loadTtsStatus({ quiet: true });
+  }
+
+  if (!ttsAudioEnabled) {
+    playBrowserSpeech(text, "Mistral API key not detected; using browser voice fallback.");
+    return;
+  }
+
+  if (await playSavedBriefAudioIfAvailable(selectedSection)) {
+    return;
+  }
+
+  try {
+    await playMistralAudioChunk();
+  } catch (error) {
+    if (error.name === "AbortError") {
+      return;
+    }
+    if (speechSupported()) {
+      setReadStatus("High-quality audio unavailable; using browser voice fallback.", "error");
+      playBrowserSpeech(text);
+      return;
+    }
+    updateReadButtons("idle");
+    setReadStatus(error.message || "Could not generate high-quality audio.", "error");
+  }
+}
+
+function initReadAloud() {
+  updateReadRateLabel();
+  if (audioSupported()) {
+    setReadStatus("Checking Mistral audio...");
+  } else if (speechSupported()) {
+    setReadStatus("Ready. Browser voice fallback only.");
+  } else {
+    setReadStatus("Read aloud is not supported in this browser.", "error");
+  }
+  updateReadButtons("idle");
+}
+
+async function loadTtsStatus(options = {}) {
+  const quiet = Boolean(options.quiet);
+
+  if (!audioSupported()) {
+    ttsAudioEnabled = false;
+    return;
+  }
+
+  try {
+    const status = await fetchJson("/tts/status");
+    ttsAudioEnabled = Boolean(status.enabled);
+    if (!quiet && readAloudIsIdle()) {
+      if (ttsAudioEnabled) {
+        setReadStatus("Ready. Mistral audio enabled.");
+      } else {
+        setReadStatus("Mistral API key not detected; browser fallback available.", "error");
+      }
+    }
+    if (ttsAudioEnabled && latestBriefData && latestBriefData.history_id && !latestBriefAudioManifest) {
+      loadBriefAudioManifest({ quiet });
+    }
+  } catch (error) {
+    ttsAudioEnabled = false;
+    if (!quiet && readAloudIsIdle()) {
+      setReadStatus("Could not verify Mistral audio; browser fallback available.", "error");
+    }
+  }
 }
 
 function statusValue(value) {
@@ -100,6 +682,13 @@ async function loadSystemStatus() {
     container.appendChild(renderStatusItem("Storage", status.storage_provider));
     container.appendChild(renderStatusItem("Calendar", status.calendar_provider));
     container.appendChild(renderStatusItem("Model", llm.enabled ? llm.provider : "fallback"));
+    container.appendChild(
+      renderStatusItem(
+        "Read aloud",
+        status.tts_configured ? "Mistral audio" : "Browser fallback",
+        status.tts_configured,
+      ),
+    );
     container.appendChild(renderStatusItem("News summaries", status.news_summary_provider));
     container.appendChild(renderStatusItem("Finance intelligence", status.finance_intelligence_provider));
     container.appendChild(
@@ -555,6 +1144,8 @@ function renderBriefNotices(notices) {
 }
 
 function renderBriefData(data) {
+  latestBriefData = data;
+  latestBriefAudioManifest = null;
   const brief = byId("brief");
   brief.innerHTML = "";
   const dailyNote = renderDailyNote(data.daily_quote || []);
@@ -568,6 +1159,10 @@ function renderBriefData(data) {
   brief.appendChild(renderSection("News", data.news || [], "News"));
   brief.appendChild(renderSection("Sports", data.sports || [], "Sports"));
   brief.appendChild(renderFinanceSection(data.finance || []));
+
+  if (data.history_id && ttsAudioEnabled) {
+    loadBriefAudioManifest({ quiet: false });
+  }
 }
 
 async function loadBrief() {
@@ -730,9 +1325,24 @@ byId("confirm-proposal").addEventListener("click", () => confirmProposal());
 byId("refresh-brief").addEventListener("click", loadBrief);
 byId("refresh-status").addEventListener("click", loadSystemStatus);
 byId("load-history").addEventListener("click", loadBriefHistory);
+byId("read-play").addEventListener("click", playSpeech);
+byId("read-pause").addEventListener("click", toggleSpeechPause);
+byId("read-stop").addEventListener("click", () => stopSpeech());
+byId("read-rate").addEventListener("input", updateReadRateLabel);
+window.addEventListener("beforeunload", () => stopSpeech(false));
 
-async function init() {
-  await Promise.allSettled([loadPreferences(), loadSystemStatus(), loadBrief()]);
+function registerServiceWorker() {
+  if (!("serviceWorker" in navigator)) {
+    return;
+  }
+
+  navigator.serviceWorker.register("/service-worker.js").catch(() => {});
 }
 
+async function init() {
+  initReadAloud();
+  await Promise.allSettled([loadPreferences(), loadSystemStatus(), loadTtsStatus(), loadBrief()]);
+}
+
+registerServiceWorker();
 init();

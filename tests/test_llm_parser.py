@@ -102,17 +102,28 @@ def test_mistral_text_generation(monkeypatch):
         def json(self):
             return {"choices": [{"message": {"content": "Mistral response"}}]}
 
-    def fake_post(url, headers, json, timeout):
-        assert headers["Authorization"] == "Bearer test-key"
-        assert json["model"] == "mistral-small-latest"
-        return FakeResponse()
+    class FakeClient:
+        def __init__(self, timeout, trust_env):
+            assert timeout == 30
+            assert trust_env is False
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def post(self, url, headers, json):
+            assert headers["Authorization"] == "Bearer test-key"
+            assert json["model"] == "mistral-small-latest"
+            return FakeResponse()
 
     import httpx
 
     monkeypatch.setenv("MODEL_PROVIDER", "mistral")
     monkeypatch.setenv("MISTRAL_API_KEY", "test-key")
     monkeypatch.setenv("MISTRAL_MODEL", "mistral-small-latest")
-    monkeypatch.setattr(httpx, "post", fake_post)
+    monkeypatch.setattr(httpx, "Client", FakeClient)
 
     assert llm_parser.generate_llm_text("hello") == "Mistral response"
 

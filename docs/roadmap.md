@@ -53,7 +53,7 @@ stay focused on setup, running, and deployment.
 
 - Continue polishing the brief history view so past emails can be searched, filtered, and reopened from the app.
 - Continue improving scheduler proposal cards and confirmation flows.
-- Add clearer error banners for token/auth, feed failures, email failures, and LLM fallback.
+- Add clearer error banners for auth, feed failures, email failures, and LLM fallback.
 - Improve mobile layout and touch targets.
 - Add a settings screen for preferences, source lists, schedule time, and status.
 
@@ -83,7 +83,7 @@ stay focused on setup, running, and deployment.
 ## Later Ideas
 
 - Multi-user support with separate profiles and preference records.
-- Stronger authentication than a shared app token.
+- Proper authentication before exposing the app to multiple users or a wider audience.
 - Voice input for quick scheduling.
 - SMS, WhatsApp, or push notifications for selected alerts.
 - Calendar-aware proactive suggestions for weekly planning.

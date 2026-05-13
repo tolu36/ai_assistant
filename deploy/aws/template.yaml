@@ -74,14 +74,37 @@ Parameters:
   ScheduleExpression:
     Type: String
     Default: cron(0 9 * * ? *)
+    Description: 9 AM send/notification schedule.
+  PipelineScheduleExpression:
+    Type: String
+    Default: cron(45 8 * * ? *)
+    Description: Earlier preparation schedule so the brief and audio are ready before 9 AM.
   ScheduleTimezone:
     Type: String
     Default: America/Toronto
+  BriefAudioRetentionDays:
+    Type: Number
+    Default: 7
+    MinValue: 1
+    MaxValue: 30
+    Description: Number of days to retain generated brief audio.
+  CloudflareR2BucketName:
+    Type: String
+    Default: ""
+    Description: Cloudflare R2 bucket name for generated brief audio.
+  CloudflareR2EndpointUrl:
+    Type: String
+    Default: ""
+    Description: R2 S3 API endpoint, for example https://ACCOUNT_ID.r2.cloudflarestorage.com.
+  BriefAudioObjectPrefix:
+    Type: String
+    Default: brief-audio
+    Description: Object key prefix for generated brief audio.
 
 Globals:
   Function:
     Runtime: python3.11
-    Timeout: 90
+    Timeout: 300
     MemorySize: 512
     Architectures:
       - x86_64
@@ -121,7 +144,6 @@ Resources:
             - "*"
           AllowHeaders:
             - content-type
-            - x-app-token
           AllowMethods:
             - GET
             - POST
@@ -152,6 +174,12 @@ Resources:
           MORNING_BRIEF_FROM_EMAIL: !Ref MorningBriefFromEmail
           MORNING_BRIEF_TO_EMAIL: !Ref MorningBriefToEmail
           MORNING_BRIEF_SUBJECT_PREFIX: Personal AI Assistant
+          MORNING_BRIEF_PREGENERATE_AUDIO: "true"
+          BRIEF_AUDIO_RETENTION_DAYS: !Ref BriefAudioRetentionDays
+          BRIEF_AUDIO_OBJECT_BUCKET: !Ref CloudflareR2BucketName
+          BRIEF_AUDIO_OBJECT_ENDPOINT_URL: !Ref CloudflareR2EndpointUrl
+          BRIEF_AUDIO_OBJECT_PREFIX: !Ref BriefAudioObjectPrefix
+          BRIEF_AUDIO_OBJECT_REGION: auto
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref AppTable
@@ -202,7 +230,25 @@ Resources:
       Target:
         Arn: !GetAtt AssistantFunction.Arn
         RoleArn: !GetAtt SchedulerInvokeRole.Arn
-        Input: '{"source":"aws.scheduler","detail-type":"Scheduler Event"}'
+        Input: '{"source":"aws.scheduler","detail-type":"Scheduler Event","detail":{"action":"send_morning_brief"}}'
+        RetryPolicy:
+          MaximumEventAgeInSeconds: 3600
+          MaximumRetryAttempts: 3
+
+  MorningBriefPipelineSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: !Sub "${AppName}-morning-brief-pipeline"
+      Description: Prepares the Personal AI Assistant morning brief and audio before notification time.
+      FlexibleTimeWindow:
+        Mode: "OFF"
+      ScheduleExpression: !Ref PipelineScheduleExpression
+      ScheduleExpressionTimezone: !Ref ScheduleTimezone
+      State: ENABLED
+      Target:
+        Arn: !GetAtt AssistantFunction.Arn
+        RoleArn: !GetAtt SchedulerInvokeRole.Arn
+        Input: '{"source":"aws.scheduler","detail-type":"Scheduler Event","detail":{"action":"prepare_morning_brief"}}'
         RetryPolicy:
           MaximumEventAgeInSeconds: 3600
           MaximumRetryAttempts: 3

@@ -20,6 +20,7 @@ from config import (
     MODEL_NAME,
     MODEL_PROVIDER,
     MODEL_TEMPERATURE,
+    OUTBOUND_HTTP_TRUST_ENV,
     TIMEZONE,
 )
 
@@ -414,20 +415,20 @@ def _generate_mistral_text(prompt: str) -> str:
             time.sleep(wait_seconds)
         _MISTRAL_LAST_REQUEST_AT = time.monotonic()
 
-    response = httpx.post(
-        os.getenv("MISTRAL_API_URL", MISTRAL_API_URL),
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        json={
-            "model": _mistral_model(),
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": _model_temperature(),
-            "max_tokens": _model_max_tokens(),
-        },
-        timeout=30,
-    )
+    with httpx.Client(timeout=30, trust_env=OUTBOUND_HTTP_TRUST_ENV) as client:
+        response = client.post(
+            os.getenv("MISTRAL_API_URL", MISTRAL_API_URL),
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": _mistral_model(),
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": _model_temperature(),
+                "max_tokens": _model_max_tokens(),
+            },
+        )
     response.raise_for_status()
     content = response.json()["choices"][0]["message"]["content"]
     if isinstance(content, list):

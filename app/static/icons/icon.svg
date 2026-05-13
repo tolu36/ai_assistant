@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Personal AI Assistant icon">
+  <rect width="512" height="512" rx="112" fill="#176b87"/>
+  <path d="M136 178c0-31 25-56 56-56h128c31 0 56 25 56 56v96c0 31-25 56-56 56h-79l-72 56c-10 8-25 1-25-12v-48c-5-3-8-7-8-13V178z" fill="#ffffff"/>
+  <circle cx="214" cy="226" r="18" fill="#176b87"/>
+  <circle cx="298" cy="226" r="18" fill="#176b87"/>
+  <path d="M205 278c32 23 70 23 102 0" fill="none" stroke="#176b87" stroke-width="22" stroke-linecap="round"/>
+  <path d="M164 142l-38-38M348 142l38-38M256 104V56" fill="none" stroke="#cfe8ef" stroke-width="24" stroke-linecap="round"/>
+</svg>

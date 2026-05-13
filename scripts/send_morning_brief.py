@@ -9,6 +9,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from app.services.brief_generator import generate_morning_brief
 from app.services.brief_history import save_morning_brief
+from app.services.brief_audio import ensure_brief_audio
 from app.services.email_delivery import (
     EmailConfigurationError,
     render_morning_brief_text,
@@ -48,6 +49,7 @@ def main() -> int:
     brief = generate_morning_brief()
     saved = save_morning_brief(brief)
     brief["history_id"] = saved["id"]
+    brief["audio_status"] = ensure_brief_audio(brief, saved["id"])
 
     if args.json:
         print(json.dumps(brief, indent=2))

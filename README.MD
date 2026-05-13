@@ -11,13 +11,16 @@ The current hosted MVP runs on AWS:
 
 - **Lambda Function URL** hosts the FastAPI API and browser UI.
 - **DynamoDB** stores preferences, brief history, scheduler proposals, and feedback constraints.
-- **EventBridge Scheduler** invokes the morning email job at 9 AM America/Toronto.
-- **SSM Parameter Store SecureString** stores hosted secrets such as the app token, SMTP password, and Mistral key.
+- **Cloudflare R2** stores generated morning brief MP3 chunks.
+- **EventBridge Scheduler** prepares the brief/audio before 9 AM and invokes the morning notification/email job at 9 AM America/Toronto.
+- **SSM Parameter Store SecureString** stores hosted secrets such as the SMTP password and Mistral key.
 - **Gmail SMTP** sends the morning brief email.
 - **Mistral** is enabled for hosted LLM-backed behavior.
 - **Google Calendar is mocked in hosted mode** for now; local Google Calendar support still exists.
 
 Local development still uses SQLite by default, so the app can run without AWS.
+The app does not currently enforce user authentication; keep the hosted URL
+private until proper authentication is added.
 
 ## What This Project Solves
 
@@ -171,8 +174,21 @@ or hosting environment take precedence over `.env`.
 
 - `MODEL_PROVIDER` - `fallback`, `transformers`, `mistral`, or `llama_cpp`
 - `MODEL_FALLBACK_PROVIDER` - fallback after the primary model, usually `transformers`
+- `APP_ACCESS_TOKEN` - optional shared token required for private API routes when set
 - `MISTRAL_API_KEY` - API key for Mistral when `MODEL_PROVIDER=mistral`
 - `MISTRAL_MODEL` - defaults to `mistral-small-latest`
+- `MISTRAL_TTS_MODEL` - defaults to `voxtral-mini-tts-2603` for high-quality read aloud
+- `MISTRAL_TTS_RESPONSE_FORMAT` - defaults to `mp3`
+- `MISTRAL_TTS_VOICE_ID` - defaults to `gb_oliver_confident`
+- `MORNING_BRIEF_PREGENERATE_AUDIO` - defaults to `true`; saved briefs prebuild section MP3s when Mistral TTS is configured
+- `BRIEF_AUDIO_DIR` - local directory for generated brief MP3 chunks, defaults to `data/brief_audio`
+- `BRIEF_AUDIO_RETENTION_DAYS` - defaults to `7`; local cached audio older than this is deleted during audio generation
+- `BRIEF_AUDIO_OBJECT_BUCKET` - hosted Cloudflare R2 bucket for generated brief audio
+- `BRIEF_AUDIO_OBJECT_PREFIX` - object key prefix for generated brief audio, defaults to `brief-audio`
+- `BRIEF_AUDIO_OBJECT_ENDPOINT_URL` - R2 S3-compatible endpoint, usually `https://<account_id>.r2.cloudflarestorage.com`
+- `BRIEF_AUDIO_OBJECT_REGION` - defaults to `auto` for Cloudflare R2
+- `BRIEF_AUDIO_OBJECT_ACCESS_KEY_ID` - R2 access key id; use SSM in hosted mode
+- `BRIEF_AUDIO_OBJECT_SECRET_ACCESS_KEY` - R2 secret access key; use SSM in hosted mode
 - `OPEN_SOURCE_MODEL` - Transformers model name
 - `SECRETS_PROVIDER` - `env` locally, `ssm` for AWS hosted secrets
 - `SSM_PARAMETER_PREFIX` - SSM prefix, defaults to `/personal-ai-assistant/prod`
@@ -183,6 +199,9 @@ or hosting environment take precedence over `.env`.
 - `NEWS_SUMMARY_PROVIDER` - `off`, `llm`, or `auto`
 - `NEWS_RSS_FEEDS` - comma-separated news feeds
 - `FINANCE_RSS_FEEDS` - comma-separated finance and macro feeds
+- `RSS_TIMEOUT_SECONDS` - per-feed RSS timeout, defaults to `1.5`
+- `FINANCE_TICKER_FEED_LIMIT` - max Yahoo ticker feeds added from the watchlist, defaults to `4`
+- `OUTBOUND_HTTP_TRUST_ENV` - `false` by default so RSS/Mistral calls ignore broken ambient proxy variables
 - `FINANCE_TOPICS` - comma-separated financial news topics such as rates, inflation, housing, Bank of Canada, employment, or global economy
 - `FINANCE_INTELLIGENCE_PROVIDER` - `off`, `auto`, or `llm` for finance synthesis
 - `DAILY_NOTE_PROVIDER` - `off`, `auto`, or `llm` for the daily quote and reflection
@@ -210,6 +229,32 @@ It generates the morning brief, saves it to SQLite history, renders text and
 HTML versions, and sends it through SMTP. In the hosted AWS deployment, the same
 brief generation and email delivery logic is invoked by EventBridge Scheduler
 through `app/aws_lambda.py`, with brief history saved to DynamoDB.
+
+## Android/PWA and Read Aloud
+
+The browser UI includes a basic Progressive Web App shell. When hosted over
+HTTPS, open the app on Android Chrome or Edge and use the browser install
+prompt or "Add to Home screen" to launch it like an app. The PWA caches only the
+static app shell; live API responses, preferences, briefs, and schedules still
+come from the server.
+
+The morning brief also includes read-aloud controls. When `MISTRAL_API_KEY` is
+configured, the browser asks the backend to generate higher-quality Mistral
+Voxtral TTS audio through `/tts/speech`, so the API key is never exposed to the
+browser. If Mistral TTS is unavailable, the UI falls back to browser/device Web
+Speech. You can read all sections or choose Daily Note, News, Sports, or
+Finance, then adjust the speech speed before starting playback.
+
+Saved briefs also prebuild section-level MP3 chunks when
+`MORNING_BRIEF_PREGENERATE_AUDIO=true`. The app plays those saved files first,
+then falls back to live Mistral generation only if the saved audio is missing.
+Local development stores MP3s under `BRIEF_AUDIO_DIR` and deletes cached brief
+audio after `BRIEF_AUDIO_RETENTION_DAYS`. Hosted AWS deployments store generated
+audio in Cloudflare R2 through its S3-compatible API when
+`BRIEF_AUDIO_OBJECT_BUCKET` and `BRIEF_AUDIO_OBJECT_ENDPOINT_URL` are configured.
+The app deletes object-storage audio older than `BRIEF_AUDIO_RETENTION_DAYS`
+during audio generation. Also set a matching 7-day R2 lifecycle rule for the
+`BRIEF_AUDIO_OBJECT_PREFIX` prefix in the Cloudflare dashboard.
 
 Use `--dry-run` first. That command does not send email:
 
@@ -275,9 +320,11 @@ sell.
 
 ## Current Brief Sources
 
-Default news and finance feeds are configured in `config.py`. The finance feeds
-include general market RSS sources plus official macro feeds from the Bank of
-Canada, Federal Reserve, and Statistics Canada.
+Default news and finance feeds are configured in `config.py`. The default news
+feeds include Google News Canada, Google News World, BBC World, NPR, CBC, The
+Guardian, and Al Jazeera. The finance feeds include general market RSS sources
+plus official macro feeds from the Bank of Canada, Federal Reserve, and
+Statistics Canada.
 
 ## Brief History
 

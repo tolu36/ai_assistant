@@ -134,13 +134,12 @@ def test_default_news_feeds_include_domestic_and_global_sources(monkeypatch):
 
     assert "https://www.cbc.ca/webfeed/rss/rss-canada" not in feeds
     assert "https://www.cbc.ca/webfeed/rss/rss-world" not in feeds
+    assert "https://news.google.com/rss?hl=en-CA&gl=CA&ceid=CA:en" in feeds
     assert "https://feeds.bbci.co.uk/news/world/rss.xml" in feeds
-    assert "https://www.cbsnews.com/latest/rss/world" in feeds
+    assert "https://feeds.npr.org/1001/rss.xml" in feeds
+    assert "https://rss.cbc.ca/lineup/topstories.xml" in feeds
     assert "https://www.theguardian.com/world/rss" in feeds
-    assert "https://nationalpost.com/feed/" in feeds
-    assert "https://globalnews.ca/feed/" in feeds
-    assert "https://globalnews.ca/canada/feed/" in feeds
-    assert "https://globalnews.ca/world/feed/" in feeds
+    assert "https://www.aljazeera.com/xml/rss/all.xml" in feeds
 
 
 def test_default_feeds_exclude_known_failing_sources(monkeypatch):
@@ -191,7 +190,7 @@ def test_fetch_rss_headlines_limits_each_feed(monkeypatch):
 
     monkeypatch.setattr(
         brief_generator,
-        "urlopen",
+        "_open_url",
         lambda request, timeout=3: FakeResponse(responses[request.full_url]),
     )
 
@@ -412,9 +411,9 @@ def test_finance_feed_urls_include_watchlist_feeds(monkeypatch):
     feeds = brief_generator._finance_feed_urls(["AAPL", "RY.TO"])
 
     assert feeds == [
+        "https://example.com/base",
         "https://finance.yahoo.com/rss/headline?s=AAPL",
         "https://finance.yahoo.com/rss/headline?s=RY.TO",
-        "https://example.com/base",
     ]
 
 
@@ -679,13 +678,13 @@ def test_generate_morning_brief_includes_source_health_notices(monkeypatch):
     )
     monkeypatch.setattr(
         brief_generator,
-        "urlopen",
+        "_open_url",
         lambda request, timeout=3: (_ for _ in ()).throw(TimeoutError("slow feed")),
     )
 
     result = generate_morning_brief(today=date(2026, 5, 7))
 
     assert any(
-        notice["title"] == "RSS feed unavailable"
+        notice["title"] == "RSS sources unavailable"
         for notice in result["notices"]
     )

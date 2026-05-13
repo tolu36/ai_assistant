@@ -14,10 +14,10 @@ class PreferencesRequest(BaseModel):
 
 
 @router.get("")
-async def get_preferences():
+def get_preferences():
     return preferences.load_preferences()
 
 
 @router.post("")
-async def update_preferences(request: PreferencesRequest):
+def update_preferences(request: PreferencesRequest):
     return preferences.save_preferences(request.model_dump(exclude_unset=True))

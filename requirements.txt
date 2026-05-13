@@ -11,3 +11,4 @@ torch
 sentencepiece
 pytest
 httpx
+boto3

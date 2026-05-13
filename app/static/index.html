@@ -3,7 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#176b87">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="AI Assistant">
   <title>Personal AI Assistant</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/static/icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
   <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
@@ -16,6 +23,29 @@
     <section class="panel brief-panel">
       <div class="toolbar">
         <h2>Morning Brief</h2>
+      </div>
+      <div class="read-aloud" aria-label="Read aloud controls">
+        <div class="button-row read-buttons">
+          <button id="read-play" type="button">Play</button>
+          <button id="read-pause" type="button">Pause</button>
+          <button id="read-stop" type="button">Stop</button>
+        </div>
+        <label class="compact-control">
+          Section
+          <select id="read-section">
+            <option value="all">All</option>
+            <option value="daily_quote">Daily Note</option>
+            <option value="news">News</option>
+            <option value="sports">Sports</option>
+            <option value="finance">Finance</option>
+          </select>
+        </label>
+        <label class="compact-control rate-control">
+          Speed
+          <input id="read-rate" type="range" min="0.75" max="1.5" step="0.05" value="1">
+          <span id="read-rate-value">1.00x</span>
+        </label>
+        <div id="read-status" class="read-status" aria-live="polite"></div>
       </div>
       <div id="brief" class="brief"></div>
     </section>

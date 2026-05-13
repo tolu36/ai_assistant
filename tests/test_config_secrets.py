@@ -4,7 +4,7 @@ import config
 
 
 def test_get_secret_value_prefers_environment(monkeypatch):
-    monkeypatch.setenv("APP_ACCESS_TOKEN", "env-token")
+    monkeypatch.setenv("SMTP_PASSWORD", "env-password")
     monkeypatch.setattr(config, "SECRETS_PROVIDER", "ssm")
     monkeypatch.setattr(
         config,
@@ -12,19 +12,19 @@ def test_get_secret_value_prefers_environment(monkeypatch):
         lambda name: pytest.fail("SSM should not be read when env is set"),
     )
 
-    assert config.get_secret_value("APP_ACCESS_TOKEN") == "env-token"
+    assert config.get_secret_value("SMTP_PASSWORD") == "env-password"
 
 
 def test_get_secret_value_reads_ssm_when_env_missing(monkeypatch):
-    monkeypatch.delenv("APP_ACCESS_TOKEN", raising=False)
+    monkeypatch.delenv("SMTP_PASSWORD", raising=False)
     monkeypatch.setattr(config, "SECRETS_PROVIDER", "ssm")
-    monkeypatch.setattr(config, "_get_ssm_secret", lambda name: "ssm-token")
+    monkeypatch.setattr(config, "_get_ssm_secret", lambda name: "ssm-password")
 
-    assert config.get_secret_value("APP_ACCESS_TOKEN") == "ssm-token"
+    assert config.get_secret_value("SMTP_PASSWORD") == "ssm-password"
 
 
 def test_required_secret_raises_when_missing(monkeypatch):
-    monkeypatch.delenv("APP_ACCESS_TOKEN", raising=False)
+    monkeypatch.delenv("MISTRAL_API_KEY", raising=False)
     monkeypatch.setattr(config, "SECRETS_PROVIDER", "ssm")
     monkeypatch.setattr(
         config,
@@ -33,4 +33,4 @@ def test_required_secret_raises_when_missing(monkeypatch):
     )
 
     with pytest.raises(RuntimeError):
-        config.get_secret_value("APP_ACCESS_TOKEN", required=True)
+        config.get_secret_value("MISTRAL_API_KEY", required=True)
