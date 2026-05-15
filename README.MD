@@ -12,15 +12,17 @@ The current hosted MVP runs on AWS:
 - **Lambda Function URL** hosts the FastAPI API and browser UI.
 - **DynamoDB** stores preferences, brief history, scheduler proposals, and feedback constraints.
 - **Cloudflare R2** stores generated morning brief MP3 chunks.
-- **EventBridge Scheduler** prepares the brief/audio before 9 AM and invokes the morning notification/email job at 9 AM America/Toronto.
+- **EventBridge Scheduler** prepares the brief/audio before 9 AM and invokes the morning notification job at 9 AM America/Toronto.
 - **SSM Parameter Store SecureString** stores hosted secrets such as the SMTP password and Mistral key.
-- **Gmail SMTP** sends the morning brief email.
-- **Mistral** is enabled for hosted LLM-backed behavior.
+- **Gmail SMTP** remains available for manual/local email delivery, but hosted scheduled email is disabled.
+- **Web Push** sends the Android PWA notification when the saved brief is ready.
+- **Mistral TTS** generates prebuilt read-aloud MP3s. Mistral-backed summaries
+  and daily notes can be enabled through provider settings.
 - **Google Calendar is mocked in hosted mode** for now; local Google Calendar support still exists.
 
 Local development still uses SQLite by default, so the app can run without AWS.
-The app does not currently enforce user authentication; keep the hosted URL
-private until proper authentication is added.
+Hosted and local private API routes are protected by a single shared
+`APP_ACCESS_TOKEN` when it is configured.
 
 ## What This Project Solves
 
@@ -29,7 +31,7 @@ private until proper authentication is added.
 - Creates calendar events after a task is scheduled or a proposal is confirmed
 - Generates a morning brief with daily note, news, sports, and finance sections
 - Stores single-user preferences locally in SQLite or hosted in DynamoDB
-- Sends the morning brief by email from the hosted scheduler
+- Sends an Android push notification when the hosted morning brief and audio are ready
 
 ## Key Principles
 
@@ -51,7 +53,9 @@ private until proper authentication is added.
 | Brief history | Lets saved briefs be reopened from the UI |
 | Preferences | Stores sports interests, teams, and finance watchlists in SQLite locally or DynamoDB on AWS |
 | Hosted UI | Provides a browser UI through AWS Lambda Function URL |
-| Morning email | Sends the daily brief from EventBridge Scheduler through Gmail SMTP |
+| Morning notification | Sends the daily brief notification from EventBridge Scheduler after audio is ready |
+| Phone notifications | Sends an Android PWA Web Push notification when the saved brief is ready |
+| Prebuilt audio | Generates Mistral MP3 chunks before notification time and stores them in Cloudflare R2 |
 | Status endpoint | Reports non-secret runtime configuration and provider health |
 | Source notices | Shows RSS/article/LLM fallback notices when sources are unavailable |
 | Daily note | Uses the configured LLM when available to add a short daily quote and reflection |
@@ -72,6 +76,7 @@ private until proper authentication is added.
 - `app/routes/brief.py` - morning brief API
 - `app/routes/preferences.py` - preference APIs
 - `app/routes/llm.py` - LLM status API
+- `app/routes/notifications.py` - Web Push subscription and notification APIs
 - `app/routes/status.py` - non-secret operational status API
 - `app/aws_lambda.py` - Lambda handler for HTTP requests and scheduled events
 - `app/services/llm_parser.py` - task parsing and fallback logic
@@ -80,6 +85,7 @@ private until proper authentication is added.
 - `app/services/brief_generator.py` - RSS news, sports, and finance briefing
 - `app/services/brief_history.py` - local/AWS morning brief history
 - `app/services/email_delivery.py` - SMTP email rendering and delivery
+- `app/services/push_notifications.py` - local/DynamoDB push subscription storage and Web Push delivery
 - `app/services/preferences.py` - local/AWS preference storage
 - `app/services/dynamodb_store.py` - hosted DynamoDB persistence
 - `app/services/schedule_feedback.py` - scheduler feedback constraints
@@ -175,7 +181,12 @@ or hosting environment take precedence over `.env`.
 - `MODEL_PROVIDER` - `fallback`, `transformers`, `mistral`, or `llama_cpp`
 - `MODEL_FALLBACK_PROVIDER` - fallback after the primary model, usually `transformers`
 - `APP_ACCESS_TOKEN` - optional shared token required for private API routes when set
-- `MISTRAL_API_KEY` - API key for Mistral when `MODEL_PROVIDER=mistral`
+- `PUSH_NOTIFICATIONS_ENABLED` - enables Web Push when VAPID keys are configured, defaults to `true`
+- `PUSH_VAPID_PUBLIC_KEY` - public VAPID key for browser push subscription
+- `PUSH_VAPID_PRIVATE_KEY` - private VAPID key used server-side to send Web Push messages
+- `PUSH_VAPID_SUBJECT` - VAPID subject, usually `mailto:you@example.com`
+- `NOTIFICATION_DB_PATH` - local SQLite push subscription database, defaults to `data/notifications.db`
+- `MISTRAL_API_KEY` - API key for Mistral LLM and TTS features
 - `MISTRAL_MODEL` - defaults to `mistral-small-latest`
 - `MISTRAL_TTS_MODEL` - defaults to `voxtral-mini-tts-2603` for high-quality read aloud
 - `MISTRAL_TTS_RESPONSE_FORMAT` - defaults to `mp3`
@@ -221,14 +232,20 @@ or hosting environment take precedence over `.env`.
 - `MORNING_BRIEF_FROM_EMAIL` - sender address
 - `MORNING_BRIEF_TO_EMAIL` - recipient address
 - `MORNING_BRIEF_SUBJECT_PREFIX` - subject prefix
+- `MORNING_BRIEF_EMAIL_ENABLED` - controls hosted scheduled email, defaults to `false`
 
-## Morning Email
+## Morning Notification And Email
 
 The local email path is implemented in `scripts/send_morning_brief.py`.
 It generates the morning brief, saves it to SQLite history, renders text and
-HTML versions, and sends it through SMTP. In the hosted AWS deployment, the same
-brief generation and email delivery logic is invoked by EventBridge Scheduler
-through `app/aws_lambda.py`, with brief history saved to DynamoDB.
+HTML versions, and sends it through SMTP. In the hosted AWS deployment,
+EventBridge Scheduler prepares the brief/audio before 9 AM and sends the phone
+notification at 9 AM. Hosted scheduled email is disabled unless
+`MORNING_BRIEF_EMAIL_ENABLED=true` is explicitly configured.
+
+The hosted notification job requires saved audio to be available before it
+sends the phone notification. If prebuilt audio is unavailable, the scheduled
+job fails and EventBridge retries instead of notifying early.
 
 ## Android/PWA and Read Aloud
 
@@ -238,6 +255,12 @@ prompt or "Add to Home screen" to launch it like an app. The PWA caches only the
 static app shell; live API responses, preferences, briefs, and schedules still
 come from the server.
 
+Android notifications use Web Push. After opening the hosted app from the
+permanent HTTPS URL, enter the app access token, open **System Status**, tap
+**Enable Notifications**, and allow the browser permission prompt. The 9 AM
+hosted scheduler sends a notification that opens the saved brief by
+`history_id`, so tapping it should not generate a new brief.
+
 The morning brief also includes read-aloud controls. When `MISTRAL_API_KEY` is
 configured, the browser asks the backend to generate higher-quality Mistral
 Voxtral TTS audio through `/tts/speech`, so the API key is never exposed to the
@@ -245,9 +268,9 @@ browser. If Mistral TTS is unavailable, the UI falls back to browser/device Web
 Speech. You can read all sections or choose Daily Note, News, Sports, or
 Finance, then adjust the speech speed before starting playback.
 
-Saved briefs also prebuild section-level MP3 chunks when
+Saved briefs prebuild section-level MP3 chunks when
 `MORNING_BRIEF_PREGENERATE_AUDIO=true`. The app plays those saved files first,
-then falls back to live Mistral generation only if the saved audio is missing.
+then falls back to live Mistral generation only if saved audio is missing.
 Local development stores MP3s under `BRIEF_AUDIO_DIR` and deletes cached brief
 audio after `BRIEF_AUDIO_RETENTION_DAYS`. Hosted AWS deployments store generated
 audio in Cloudflare R2 through its S3-compatible API when
@@ -284,9 +307,8 @@ EventBridge schedule:
 ```
 
 The current hosted MVP uses AWS EventBridge Scheduler as the only production
-morning email scheduler. Avoid adding a second scheduler for the same script,
-or you can receive duplicate morning briefs from separate runtimes with
-different configuration.
+morning notification scheduler. Avoid adding a second scheduler for the local
+email script unless hosted scheduled email is intentionally enabled.
 
 ## Daily Note Behavior
 
@@ -342,29 +364,28 @@ storing it.
 ## Hosting
 
 The active hosted deployment uses AWS serverless. It runs the app with Lambda
-Function URLs, DynamoDB, EventBridge Scheduler, SSM Parameter Store, Gmail SMTP,
-and Mistral. Setup details are in `docs/aws-always-free-serverless.md`.
+Function URLs, DynamoDB, EventBridge Scheduler, SSM Parameter Store,
+Cloudflare R2, Web Push, and Mistral. Gmail SMTP remains available for manual
+email use. Setup details are in `docs/aws-always-free-serverless.md`.
 
 After code changes, rebuild and redeploy from WSL in the repository root:
 
 ```bash
 sam build --template-file deploy/aws/template.yaml
-sam deploy --resolve-s3 --no-confirm-changeset --capabilities CAPABILITY_IAM CAPABILITY_AUTO_EXPAND --profile ai-assistant --region us-east-2 --stack-name personal-ai-assistant --template-file .aws-sam/build/template.yaml
+python3 scripts/deploy_aws_app.py
 ```
 
-To keep the hosted app using Mistral-backed article summaries, finance
-intelligence, and daily notes, deploy with these non-secret parameter overrides:
-
-```bash
-sam deploy --resolve-s3 --no-confirm-changeset --capabilities CAPABILITY_IAM CAPABILITY_AUTO_EXPAND --profile ai-assistant --region us-east-2 --stack-name personal-ai-assistant --template-file .aws-sam/build/template.yaml --parameter-overrides ModelProvider=mistral NewsSummaryProvider=llm FinanceIntelligenceProvider=llm DailyNoteProvider=llm DailyQuoteEnabled=true
-```
+The deploy helper reads non-secret deployment settings from `.env`, including
+the R2 bucket, Web Push subject, schedule expressions, finance/sports
+preferences, and provider flags. Update `.env` and rerun the helper when those
+hosted settings change.
 
 Secrets are not passed in deploy commands. Hosted secrets live in SSM Parameter
 Store under the configured `SSM_PARAMETER_PREFIX`.
 
 Use Oracle Cloud Always Free when you want a traditional VPS. The VPS keeps
-SQLite state and runs the 9 AM email job from the same app data. Setup details
-are in `docs/oracle-vps-setup.md`.
+SQLite state and can run the legacy 9 AM email job from the same app data.
+Setup details are in `docs/oracle-vps-setup.md`.
 
 ## Roadmap
 

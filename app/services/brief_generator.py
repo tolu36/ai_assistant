@@ -1,6 +1,6 @@
 from contextvars import ContextVar
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date
+from datetime import date, datetime
 import html
 import json
 import logging
@@ -9,6 +9,7 @@ import re
 from typing import Any, Dict, List
 from urllib.parse import quote
 from urllib.request import Request, build_opener, ProxyHandler, urlopen
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import xml.etree.ElementTree as ET
 
 from app.services.preferences import load_preferences
@@ -28,6 +29,7 @@ from config import (
     NEWS_SUMMARY_PROVIDER,
     NEWS_SUMMARY_SENTENCES,
     RSS_TIMEOUT_SECONDS,
+    TIMEZONE,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -1257,9 +1259,18 @@ def build_finance_section() -> List[Any]:
     return lines
 
 
+def _current_brief_date() -> date:
+    try:
+        timezone = ZoneInfo(TIMEZONE)
+    except ZoneInfoNotFoundError:
+        LOGGER.warning("Configured TIMEZONE %s was not found; using local date.", TIMEZONE)
+        return date.today()
+    return datetime.now(timezone).date()
+
+
 def generate_morning_brief(today: date | None = None) -> Dict[str, Any]:
     token = _BRIEF_NOTICES.set([])
-    brief_date = today or date.today()
+    brief_date = today or _current_brief_date()
     try:
         brief = {
             "date": brief_date.isoformat(),

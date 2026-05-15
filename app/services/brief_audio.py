@@ -6,6 +6,7 @@ import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
+from urllib.parse import urlsplit, urlunsplit
 
 from app.services.tts import TextToSpeechError, generate_mistral_speech, tts_status
 from config import (
@@ -61,10 +62,14 @@ def _object_prefix() -> str:
 
 
 def _object_endpoint_url() -> str:
-    return os.getenv(
+    value = os.getenv(
         "BRIEF_AUDIO_OBJECT_ENDPOINT_URL",
         BRIEF_AUDIO_OBJECT_ENDPOINT_URL,
     ).strip()
+    parsed = urlsplit(value)
+    if parsed.scheme and parsed.netloc:
+        return urlunsplit((parsed.scheme, parsed.netloc, "", "", ""))
+    return value
 
 
 def _object_region() -> str:

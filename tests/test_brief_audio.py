@@ -182,3 +182,15 @@ def test_cleanup_expired_brief_audio_removes_old_object_storage_items(monkeypatc
 
     assert result == {"deleted": 1, "kept": 1}
     assert deleted == [("audio-bucket", "brief-audio/old/news-001.mp3")]
+
+
+def test_object_endpoint_url_ignores_bucket_path(monkeypatch):
+    monkeypatch.setenv(
+        "BRIEF_AUDIO_OBJECT_ENDPOINT_URL",
+        "https://example-account.r2.cloudflarestorage.com/audio-bucket",
+    )
+
+    assert (
+        brief_audio._object_endpoint_url()
+        == "https://example-account.r2.cloudflarestorage.com"
+    )

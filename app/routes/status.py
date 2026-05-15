@@ -15,10 +15,12 @@ from config import (
     SMTP_USERNAME,
     STORAGE_PROVIDER,
     TIMEZONE,
+    MORNING_BRIEF_EMAIL_ENABLED,
     MORNING_BRIEF_TO_EMAIL,
     MISTRAL_TTS_MODEL,
     secrets_configured,
 )
+from app.services.push_notifications import notification_status
 
 router = APIRouter()
 
@@ -66,8 +68,13 @@ def system_status():
         "tts_provider": "mistral",
         "tts_model": _env("MISTRAL_TTS_MODEL", MISTRAL_TTS_MODEL),
         "tts_configured": secret_status.get("mistral_api_key", False),
+        "push_configured": notification_status(include_count=False)["enabled"],
         "auth_configured": secret_status.get("app_access_token", False),
         "timezone": _env("TIMEZONE", TIMEZONE),
+        "email_enabled": _env_bool(
+            "MORNING_BRIEF_EMAIL_ENABLED",
+            MORNING_BRIEF_EMAIL_ENABLED,
+        ),
         "email_configured": email_configured,
         "secrets_provider": _env("SECRETS_PROVIDER", SECRETS_PROVIDER),
         "ssm_secrets_configured": all(secret_status.values()),

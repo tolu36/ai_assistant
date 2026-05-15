@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime, timezone
 
 from app.services import brief_generator
 from app.services.brief_generator import generate_morning_brief, parse_rss_items
@@ -34,6 +34,27 @@ def test_generate_morning_brief_has_required_sections(monkeypatch):
     assert result["news"][0]["summary"] == "This is a short test summary."
     assert len(result["sports"]) >= 2
     assert len(result["finance"]) >= 2
+
+
+def test_generate_morning_brief_uses_configured_timezone(monkeypatch):
+    class FixedDateTime:
+        @classmethod
+        def now(cls, tz=None):
+            utc_value = datetime(2026, 5, 15, 1, 30, tzinfo=timezone.utc)
+            if tz:
+                return utc_value.astimezone(tz)
+            return utc_value.replace(tzinfo=None)
+
+    monkeypatch.setattr(brief_generator, "TIMEZONE", "America/Toronto")
+    monkeypatch.setattr(brief_generator, "datetime", FixedDateTime)
+    monkeypatch.setattr(brief_generator, "build_daily_quote_section", lambda brief_date: [])
+    monkeypatch.setattr(brief_generator, "build_news_section", lambda: [])
+    monkeypatch.setattr(brief_generator, "build_sports_section", lambda: [])
+    monkeypatch.setattr(brief_generator, "build_finance_section", lambda: [])
+
+    result = generate_morning_brief()
+
+    assert result["date"] == "2026-05-14"
 
 
 def test_parse_rss_items_extracts_titles_and_links():

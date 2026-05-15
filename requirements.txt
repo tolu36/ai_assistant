@@ -12,3 +12,5 @@ sentencepiece
 pytest
 httpx
 boto3
+pywebpush
+mangum

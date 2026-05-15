@@ -1,5 +1,6 @@
 import json
 import os
+import hashlib
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List
@@ -120,6 +121,71 @@ def save_morning_brief(brief: Dict[str, Any]) -> Dict[str, Any]:
         "created_at": created_at,
         "brief": brief,
     }
+
+
+def _subscription_id(endpoint: str) -> str:
+    return hashlib.sha256(endpoint.encode("utf-8")).hexdigest()[:32]
+
+
+def save_push_subscription(
+    subscription: Dict[str, Any],
+    user_agent: str = "",
+) -> Dict[str, Any]:
+    endpoint = str(subscription.get("endpoint", "")).strip()
+    subscription_id = _subscription_id(endpoint)
+    now = _now()
+    item = {
+        "pk": _pk(),
+        "sk": f"PUSH_SUBSCRIPTION#{subscription_id}",
+        "type": "push_subscription",
+        "id": subscription_id,
+        "endpoint_hash": subscription_id,
+        "user_agent": user_agent,
+        "payload_json": json.dumps(subscription, sort_keys=True),
+        "updated_at": now,
+    }
+    _table().put_item(Item=item)
+    return {
+        "id": subscription_id,
+        "endpoint_hash": subscription_id,
+        "user_agent": user_agent,
+        "subscription": subscription,
+        "updated_at": now,
+    }
+
+
+def list_push_subscriptions() -> List[Dict[str, Any]]:
+    from boto3.dynamodb.conditions import Key
+
+    response = _table().query(
+        KeyConditionExpression=Key("pk").eq(_pk())
+        & Key("sk").begins_with("PUSH_SUBSCRIPTION#"),
+        ScanIndexForward=False,
+    )
+    subscriptions = []
+    for item in response.get("Items", []):
+        try:
+            subscription = json.loads(item.get("payload_json", "{}"))
+        except json.JSONDecodeError:
+            continue
+        subscriptions.append(
+            {
+                "id": item.get("id", item["sk"].replace("PUSH_SUBSCRIPTION#", "")),
+                "endpoint_hash": item.get("endpoint_hash", ""),
+                "user_agent": item.get("user_agent", ""),
+                "subscription": subscription,
+                "updated_at": item.get("updated_at", ""),
+            }
+        )
+    return subscriptions
+
+
+def delete_push_subscription(endpoint: str) -> bool:
+    subscription_id = _subscription_id(endpoint)
+    _table().delete_item(
+        Key={"pk": _pk(), "sk": f"PUSH_SUBSCRIPTION#{subscription_id}"},
+    )
+    return True
 
 
 def list_morning_briefs(limit: int = 10) -> List[Dict[str, Any]]:

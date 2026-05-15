@@ -1,7 +1,9 @@
-from datetime import date
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from mangum import Mangum
 
+from config import MORNING_BRIEF_EMAIL_ENABLED, TIMEZONE
 from app.main import app
 from app.services.brief_audio import ensure_brief_audio
 from app.services.brief_generator import generate_morning_brief
@@ -11,6 +13,7 @@ from app.services.brief_history import (
     save_morning_brief,
 )
 from app.services.email_delivery import send_morning_brief_email
+from app.services.push_notifications import notify_morning_brief_ready
 
 api_handler = Mangum(app, lifespan="off")
 
@@ -27,7 +30,7 @@ def _scheduled_action(event: dict) -> str:
 
 
 def _latest_prepared_morning_brief() -> dict | None:
-    today = date.today().isoformat()
+    today = datetime.now(ZoneInfo(TIMEZONE)).date().isoformat()
     for summary in list_morning_briefs(limit=10):
         if summary.get("brief_date") != today:
             continue
@@ -63,11 +66,29 @@ def _send_morning_brief() -> dict:
 
     brief = saved["brief"]
     brief["history_id"] = saved["id"]
-    result = send_morning_brief_email(brief)
+    brief["audio_status"] = ensure_brief_audio(brief, saved["id"])
+    if not brief["audio_status"].get("available"):
+        raise RuntimeError(
+            f"Morning brief audio is not ready: {brief['audio_status'].get('status', 'unknown')}"
+        )
+    if MORNING_BRIEF_EMAIL_ENABLED:
+        try:
+            email = send_morning_brief_email(brief)
+        except Exception as exc:
+            email = {
+                "status": "failed",
+                "error_type": exc.__class__.__name__,
+                "detail": str(exc),
+            }
+    else:
+        email = {"status": "disabled"}
+    notification = notify_morning_brief_ready(brief, saved["id"])
     return {
         "status": "sent",
         "history_id": saved["id"],
-        "email": result,
+        "audio_status": brief["audio_status"],
+        "email": email,
+        "notification": notification,
     }
 
 

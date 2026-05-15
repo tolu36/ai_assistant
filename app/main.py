@@ -1,11 +1,11 @@
 import hmac
 import os
 
+import config
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from app.routes import schedule, brief, llm, preferences, status, tts
-from config import APP_ACCESS_TOKEN
+from app.routes import schedule, brief, llm, notifications, preferences, status, tts
 
 app = FastAPI(title="Personal AI Assistant")
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
@@ -17,6 +17,7 @@ PRIVATE_API_PREFIXES = (
     "/schedule",
     "/status",
     "/tts",
+    "/notifications",
 )
 
 
@@ -24,7 +25,7 @@ def _app_access_token() -> str:
     value = os.getenv("APP_ACCESS_TOKEN")
     if value is not None:
         return value.strip()
-    return APP_ACCESS_TOKEN.strip()
+    return config.APP_ACCESS_TOKEN.strip()
 
 
 @app.middleware("http")
@@ -56,6 +57,7 @@ app.include_router(schedule.router, prefix="/schedule", tags=["Scheduler"])
 app.include_router(brief.router, prefix="/brief", tags=["Brief Generator"])
 app.include_router(llm.router, prefix="/llm", tags=["LLM"])
 app.include_router(tts.router, prefix="/tts", tags=["Text to Speech"])
+app.include_router(notifications.router, prefix="/notifications", tags=["Notifications"])
 app.include_router(preferences.router, prefix="/preferences", tags=["Preferences"])
 app.include_router(status.router, prefix="/status", tags=["Status"])
 

@@ -1,9 +1,9 @@
-const CACHE_NAME = "personal-ai-assistant-shell-v7";
+const CACHE_NAME = "personal-ai-assistant-shell-v12";
 
 const SHELL_ASSETS = [
   "/",
   "/manifest.webmanifest",
-  "/static/app.js",
+  "/static/app.js?v=prod-20260514-2",
   "/static/styles.css",
   "/static/icons/icon-192.png",
   "/static/icons/icon-512.png",
@@ -17,6 +17,7 @@ const API_PREFIXES = [
   "/schedule",
   "/status",
   "/tts",
+  "/notifications",
 ];
 
 self.addEventListener("install", (event) => {
@@ -78,4 +79,50 @@ self.addEventListener("fetch", (event) => {
       }),
     );
   }
+});
+
+self.addEventListener("push", (event) => {
+  let payload = {};
+  if (event.data) {
+    try {
+      payload = event.data.json();
+    } catch {
+      payload = { body: event.data.text() };
+    }
+  }
+
+  const title = payload.title || "Personal AI Assistant";
+  const options = {
+    body: payload.body || "New update available.",
+    icon: "/static/icons/icon-192.png",
+    badge: "/static/icons/icon-192.png",
+    tag: payload.tag || "personal-ai-assistant",
+    data: {
+      url: payload.url || "/",
+    },
+  };
+
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const targetUrl = new URL(event.notification.data?.url || "/", self.location.origin).href;
+
+  event.waitUntil(
+    self.clients
+      .matchAll({ type: "window", includeUncontrolled: true })
+      .then((clientList) => {
+        for (const client of clientList) {
+          const clientUrl = new URL(client.url);
+          if (clientUrl.origin === self.location.origin) {
+            if ("navigate" in client) {
+              client.navigate(targetUrl);
+            }
+            return client.focus();
+          }
+        }
+        return self.clients.openWindow(targetUrl);
+      }),
+  );
 });

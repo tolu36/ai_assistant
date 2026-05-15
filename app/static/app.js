@@ -21,13 +21,21 @@ let currentAudioQueueIndex = 0;
 let currentSpeechText = "";
 let ttsAudioEnabled = false;
 let latestBriefAudioManifest = null;
+let serviceWorkerRegistration = null;
 
 function withAuthHeaders(headers = {}) {
   const token = localStorage.getItem(tokenStorageKey);
   return token ? { ...headers, "X-App-Token": token } : headers;
 }
 
-function promptForAppToken() {
+function promptForAppToken(force = false) {
+  const existing = localStorage.getItem(tokenStorageKey);
+  if (existing && !force) {
+    return existing;
+  }
+  if (force) {
+    localStorage.removeItem(tokenStorageKey);
+  }
   const token = window.prompt("Enter app access token");
   if (!token) {
     return "";
@@ -38,6 +46,7 @@ function promptForAppToken() {
 
 async function apiFetch(url, options = {}) {
   try {
+    const tokenBeforeRequest = localStorage.getItem(tokenStorageKey);
     const response = await fetch(url, {
       ...options,
       headers: withAuthHeaders(options.headers || {}),
@@ -46,7 +55,7 @@ async function apiFetch(url, options = {}) {
       return response;
     }
 
-    const token = promptForAppToken();
+    const token = promptForAppToken(Boolean(tokenBeforeRequest));
     if (!token) {
       return response;
     }
@@ -56,7 +65,7 @@ async function apiFetch(url, options = {}) {
     });
   } catch (error) {
     throw new Error(
-      "Could not reach the app server. Refresh the page; if this persists, restart the local server.",
+      "Could not reach the app server. Refresh the page; if this persists, check the hosted app URL.",
     );
   }
 }
@@ -81,6 +90,124 @@ function createNotice(message, type = "info") {
   notice.className = `notice ${type}`;
   notice.textContent = message;
   return notice;
+}
+
+function notificationsSupported() {
+  return (
+    "Notification" in window &&
+    "serviceWorker" in navigator &&
+    "PushManager" in window
+  );
+}
+
+function setNotificationStatus(message, type = "info") {
+  const status = byId("notification-status");
+  status.textContent = message;
+  status.className = `notification-status ${type}`;
+}
+
+function updateNotificationButtons(state = "idle") {
+  const enable = byId("enable-notifications");
+  if (!enable) {
+    return;
+  }
+  enable.disabled = state === "loading" || state === "unsupported";
+}
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+
+  for (let i = 0; i < rawData.length; i += 1) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
+
+async function getServiceWorkerRegistration() {
+  if (!("serviceWorker" in navigator)) {
+    throw new Error("Service workers are not supported in this browser.");
+  }
+  if (serviceWorkerRegistration) {
+    return serviceWorkerRegistration;
+  }
+  serviceWorkerRegistration = await navigator.serviceWorker.register("/service-worker.js");
+  return navigator.serviceWorker.ready;
+}
+
+async function loadNotificationStatus() {
+  if (!notificationsSupported()) {
+    setNotificationStatus("Push notifications are not supported in this browser.", "error");
+    updateNotificationButtons("unsupported");
+    return;
+  }
+
+  updateNotificationButtons("loading");
+  try {
+    const [status, registration] = await Promise.all([
+      fetchJson("/notifications/status"),
+      getServiceWorkerRegistration(),
+    ]);
+    const subscription = await registration.pushManager.getSubscription();
+    if (!status.enabled) {
+      setNotificationStatus("Push notifications need VAPID keys in hosted config.", "error");
+      updateNotificationButtons("idle");
+      return;
+    }
+    if (subscription && Notification.permission === "granted") {
+      setNotificationStatus("Enabled on this device.", "ok");
+    } else if (Notification.permission === "denied") {
+      setNotificationStatus("Notifications are blocked for this app.", "error");
+    } else {
+      setNotificationStatus("Ready to enable on this device.");
+    }
+    updateNotificationButtons("idle");
+  } catch (error) {
+    setNotificationStatus(error.message, "error");
+    updateNotificationButtons("idle");
+  }
+}
+
+async function enableNotifications() {
+  if (!notificationsSupported()) {
+    setNotificationStatus("Push notifications are not supported in this browser.", "error");
+    updateNotificationButtons("unsupported");
+    return;
+  }
+
+  updateNotificationButtons("loading");
+  setNotificationStatus("Enabling notifications...");
+  try {
+    const permission = await Notification.requestPermission();
+    if (permission !== "granted") {
+      setNotificationStatus("Notifications were not allowed.", "error");
+      updateNotificationButtons("idle");
+      return;
+    }
+
+    const registration = await getServiceWorkerRegistration();
+    const keyData = await fetchJson("/notifications/vapid-public-key");
+    let subscription = await registration.pushManager.getSubscription();
+    if (!subscription) {
+      subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(keyData.public_key),
+      });
+    }
+
+    await fetchJson("/notifications/subscribe", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(subscription.toJSON()),
+    });
+    setNotificationStatus("Enabled on this device.", "ok");
+  } catch (error) {
+    setNotificationStatus(error.message, "error");
+  } finally {
+    updateNotificationButtons("idle");
+  }
 }
 
 function speechSupported() {
@@ -689,6 +816,13 @@ async function loadSystemStatus() {
         status.tts_configured,
       ),
     );
+    container.appendChild(
+      renderStatusItem(
+        "Push",
+        status.push_configured ? "Configured" : "Needs VAPID",
+        status.push_configured,
+      ),
+    );
     container.appendChild(renderStatusItem("News summaries", status.news_summary_provider));
     container.appendChild(renderStatusItem("Finance intelligence", status.finance_intelligence_provider));
     container.appendChild(
@@ -698,11 +832,20 @@ async function loadSystemStatus() {
         status.daily_quote_enabled,
       ),
     );
-    container.appendChild(renderStatusItem("Email", status.email_configured, status.email_configured));
+    container.appendChild(
+      renderStatusItem("Email account", status.email_configured, status.email_configured),
+    );
     container.appendChild(
       renderStatusItem("SSM secrets", status.ssm_secrets_configured, status.ssm_secrets_configured),
     );
     container.appendChild(renderStatusItem("Timezone", status.timezone));
+    container.appendChild(
+      renderStatusItem(
+        "Email schedule",
+        status.email_enabled ? "Enabled" : "Disabled",
+        !status.email_enabled,
+      ),
+    );
   } catch (error) {
     container.innerHTML = "";
     container.appendChild(createNotice(error.message, "error"));
@@ -765,6 +908,44 @@ function formatDateTime(value) {
     hour: "numeric",
     minute: "2-digit",
   });
+}
+
+function localDateString(value) {
+  if (!value) {
+    return "";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function formatBriefHistoryDate(briefDate, createdAt) {
+  const localCreatedDate = localDateString(createdAt);
+  if (!briefDate) {
+    return localCreatedDate || "Saved brief";
+  }
+  if (!localCreatedDate || !/^\d{4}-\d{2}-\d{2}$/.test(briefDate)) {
+    return briefDate;
+  }
+
+  const briefTime = new Date(`${briefDate}T00:00:00`).getTime();
+  const localCreatedTime = new Date(`${localCreatedDate}T00:00:00`).getTime();
+  const dayDiff = Math.round((briefTime - localCreatedTime) / 86400000);
+  if (Math.abs(dayDiff) === 1) {
+    return localCreatedDate;
+  }
+  return briefDate;
+}
+
+function hasBriefContent(data) {
+  return ["daily_quote", "news", "sports", "finance"].some(
+    (section) => Array.isArray(data[section]) && data[section].length > 0,
+  );
 }
 
 function renderMetaChips(values) {
@@ -1148,6 +1329,17 @@ function renderBriefData(data) {
   latestBriefAudioManifest = null;
   const brief = byId("brief");
   brief.innerHTML = "";
+
+  if (!hasBriefContent(data)) {
+    brief.appendChild(
+      createNotice(
+        "This saved brief does not contain any brief content. Refresh the brief to generate a new saved copy.",
+        "error",
+      ),
+    );
+    return;
+  }
+
   const dailyNote = renderDailyNote(data.daily_quote || []);
   if (dailyNote) {
     brief.appendChild(dailyNote);
@@ -1179,6 +1371,28 @@ async function loadBrief() {
   }
 }
 
+async function loadInitialBrief() {
+  const params = new URLSearchParams(window.location.search);
+  const briefId = params.get("brief_id");
+  if (!briefId) {
+    await loadBrief();
+    return;
+  }
+
+  const brief = byId("brief");
+  brief.innerHTML = "";
+  brief.appendChild(createNotice("Opening saved morning brief..."));
+
+  try {
+    const saved = await fetchJson(`/brief/history/${encodeURIComponent(briefId)}`);
+    renderBriefData(saved.brief || {});
+    window.history.replaceState({}, "", "/");
+  } catch (error) {
+    brief.innerHTML = "";
+    brief.appendChild(createNotice(error.message, "error"));
+  }
+}
+
 async function loadBriefHistory() {
   const container = byId("brief-history");
   container.innerHTML = "";
@@ -1198,9 +1412,9 @@ async function loadBriefHistory() {
 
       const text = document.createElement("div");
       const title = document.createElement("strong");
-      title.textContent = entry.brief_date || "Saved brief";
+      title.textContent = formatBriefHistoryDate(entry.brief_date, entry.created_at);
       const meta = document.createElement("span");
-      meta.textContent = entry.created_at || "";
+      meta.textContent = formatDateTime(entry.created_at);
       text.appendChild(title);
       text.appendChild(meta);
 
@@ -1329,20 +1543,33 @@ byId("read-play").addEventListener("click", playSpeech);
 byId("read-pause").addEventListener("click", toggleSpeechPause);
 byId("read-stop").addEventListener("click", () => stopSpeech());
 byId("read-rate").addEventListener("input", updateReadRateLabel);
+byId("enable-notifications").addEventListener("click", enableNotifications);
 window.addEventListener("beforeunload", () => stopSpeech(false));
 
 function registerServiceWorker() {
   if (!("serviceWorker" in navigator)) {
-    return;
+    return Promise.resolve(null);
   }
 
-  navigator.serviceWorker.register("/service-worker.js").catch(() => {});
+  return navigator.serviceWorker
+    .register("/service-worker.js")
+    .then((registration) => {
+      serviceWorkerRegistration = registration;
+      return registration;
+    })
+    .catch(() => null);
 }
 
 async function init() {
   initReadAloud();
-  await Promise.allSettled([loadPreferences(), loadSystemStatus(), loadTtsStatus(), loadBrief()]);
+  registerServiceWorker();
+  await Promise.allSettled([
+    loadPreferences(),
+    loadSystemStatus(),
+    loadTtsStatus(),
+    loadInitialBrief(),
+    loadNotificationStatus(),
+  ]);
 }
 
-registerServiceWorker();
 init();

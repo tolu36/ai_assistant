@@ -74,7 +74,13 @@ def get_secret_value(name: str, default: str = "", required: bool = False) -> st
 
 
 def secrets_configured() -> dict[str, bool]:
-    names = ("APP_ACCESS_TOKEN", "SMTP_PASSWORD", "MISTRAL_API_KEY")
+    names = (
+        "APP_ACCESS_TOKEN",
+        "SMTP_PASSWORD",
+        "MISTRAL_API_KEY",
+        "PUSH_VAPID_PUBLIC_KEY",
+        "PUSH_VAPID_PRIVATE_KEY",
+    )
     return {name.lower(): bool(get_secret_value(name)) for name in names}
 
 
@@ -157,6 +163,7 @@ BRIEF_AUDIO_OBJECT_SECRET_ACCESS_KEY = get_secret_value(
     get_secret_value("CLOUDFLARE_R2_SECRET_ACCESS_KEY", ""),
 )
 BRIEF_AUDIO_RETENTION_DAYS = int(os.getenv("BRIEF_AUDIO_RETENTION_DAYS", "7"))
+NOTIFICATION_DB_PATH = os.getenv("NOTIFICATION_DB_PATH", "data/notifications.db")
 STORAGE_PROVIDER = _env("STORAGE_PROVIDER", "sqlite")
 DYNAMODB_TABLE_NAME = _env("DYNAMODB_TABLE_NAME", "personal-ai-assistant")
 DYNAMODB_USER_ID = _env("DYNAMODB_USER_ID", "default")
@@ -176,6 +183,21 @@ MORNING_BRIEF_FROM_EMAIL = _env("MORNING_BRIEF_FROM_EMAIL", SMTP_USERNAME)
 MORNING_BRIEF_TO_EMAIL = _env("MORNING_BRIEF_TO_EMAIL", "")
 MORNING_BRIEF_SUBJECT_PREFIX = _env(
     "MORNING_BRIEF_SUBJECT_PREFIX", "Personal AI Assistant"
+)
+MORNING_BRIEF_EMAIL_ENABLED = _env(
+    "MORNING_BRIEF_EMAIL_ENABLED",
+    "false",
+).lower() in ("1", "true", "yes")
+PUSH_NOTIFICATIONS_ENABLED = _env("PUSH_NOTIFICATIONS_ENABLED", "true").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+PUSH_VAPID_PUBLIC_KEY = get_secret_value("PUSH_VAPID_PUBLIC_KEY", "")
+PUSH_VAPID_PRIVATE_KEY = get_secret_value("PUSH_VAPID_PRIVATE_KEY", "")
+PUSH_VAPID_SUBJECT = _env(
+    "PUSH_VAPID_SUBJECT",
+    f"mailto:{MORNING_BRIEF_TO_EMAIL or SMTP_USERNAME or 'admin@example.com'}",
 )
 
 MODEL_PROVIDER = os.getenv("MODEL_PROVIDER", "fallback")

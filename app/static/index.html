@@ -114,13 +114,17 @@
       <div class="status-content">
         <div class="toolbar">
           <h2>Status</h2>
-          <button id="refresh-status" type="button">Refresh Status</button>
+          <div class="button-row">
+            <button id="enable-notifications" type="button">Enable Notifications</button>
+            <button id="refresh-status" type="button">Refresh Status</button>
+          </div>
         </div>
+        <div id="notification-status" class="notification-status" aria-live="polite"></div>
         <div id="system-status" class="status-grid"></div>
       </div>
     </details>
   </main>
 
-  <script src="/static/app.js"></script>
+  <script src="/static/app.js?v=prod-20260514-2"></script>
 </body>
 </html>

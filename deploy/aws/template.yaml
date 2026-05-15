@@ -100,6 +100,10 @@ Parameters:
     Type: String
     Default: brief-audio
     Description: Object key prefix for generated brief audio.
+  PushVapidSubject:
+    Type: String
+    Default: ""
+    Description: Optional VAPID subject, for example mailto:you@example.com.
 
 Globals:
   Function:
@@ -144,6 +148,8 @@ Resources:
             - "*"
           AllowHeaders:
             - content-type
+            - x-app-token
+            - authorization
           AllowMethods:
             - GET
             - POST
@@ -174,12 +180,15 @@ Resources:
           MORNING_BRIEF_FROM_EMAIL: !Ref MorningBriefFromEmail
           MORNING_BRIEF_TO_EMAIL: !Ref MorningBriefToEmail
           MORNING_BRIEF_SUBJECT_PREFIX: Personal AI Assistant
+          MORNING_BRIEF_EMAIL_ENABLED: "false"
           MORNING_BRIEF_PREGENERATE_AUDIO: "true"
           BRIEF_AUDIO_RETENTION_DAYS: !Ref BriefAudioRetentionDays
           BRIEF_AUDIO_OBJECT_BUCKET: !Ref CloudflareR2BucketName
           BRIEF_AUDIO_OBJECT_ENDPOINT_URL: !Ref CloudflareR2EndpointUrl
           BRIEF_AUDIO_OBJECT_PREFIX: !Ref BriefAudioObjectPrefix
           BRIEF_AUDIO_OBJECT_REGION: auto
+          PUSH_NOTIFICATIONS_ENABLED: "true"
+          PUSH_VAPID_SUBJECT: !Ref PushVapidSubject
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref AppTable
